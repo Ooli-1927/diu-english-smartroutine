@@ -1,0 +1,7 @@
+day,batch_id,teacher_initial,course_code,type,mode,start,end,room_id,group,is_cancelled,cancellation_reason
+Mon,B1,JD,CS101,Lecture,Onsite,09:00,10:30,R101,,false,
+Mon,B1,AB,CS102,Tutorial,Online,11:00,12:00,,G-1,false,
+Tue,B2,XY,CS103,Sessional,Onsite,14:00,15:30,R102,,false,
+Wed,B1,JD,CS101,Lecture,Onsite,09:00,10:30,R101,,false,
+Thu,B2,AB,CS102,Tutorial,Online,11:00,12:00,,G-2,false,
+Fri,B1,XY,CS103,Sessional,Onsite,14:00,16:00,R103,,false,

@@ -1,0 +1,89 @@
+{
+  "exportDate": "2026-02-04T00:00:00.000",
+  "entries": [
+    {
+      "day": "Mon",
+      "batch_id": "B1",
+      "teacher_initial": "JD",
+      "course_code": "CS101",
+      "type": "Lecture",
+      "mode": "Onsite",
+      "start": "09:00",
+      "end": "10:30",
+      "room_id": "R101",
+      "group": null,
+      "is_cancelled": false,
+      "cancellation_reason": null
+    },
+    {
+      "day": "Mon",
+      "batch_id": "B1",
+      "teacher_initial": "AB",
+      "course_code": "CS102",
+      "type": "Tutorial",
+      "mode": "Online",
+      "start": "11:00",
+      "end": "12:00",
+      "room_id": null,
+      "group": "G-1",
+      "is_cancelled": false,
+      "cancellation_reason": null
+    },
+    {
+      "day": "Tue",
+      "batch_id": "B2",
+      "teacher_initial": "XY",
+      "course_code": "CS103",
+      "type": "Sessional",
+      "mode": "Onsite",
+      "start": "14:00",
+      "end": "15:30",
+      "room_id": "R102",
+      "group": null,
+      "is_cancelled": false,
+      "cancellation_reason": null
+    },
+    {
+      "day": "Wed",
+      "batch_id": "B1",
+      "teacher_initial": "JD",
+      "course_code": "CS101",
+      "type": "Lecture",
+      "mode": "Onsite",
+      "start": "09:00",
+      "end": "10:30",
+      "room_id": "R101",
+      "group": null,
+      "is_cancelled": false,
+      "cancellation_reason": null
+    },
+    {
+      "day": "Thu",
+      "batch_id": "B2",
+      "teacher_initial": "AB",
+      "course_code": "CS102",
+      "type": "Tutorial",
+      "mode": "Online",
+      "start": "11:00",
+      "end": "12:00",
+      "room_id": null,
+      "group": "G-2",
+      "is_cancelled": false,
+      "cancellation_reason": null
+    },
+    {
+      "day": "Fri",
+      "batch_id": "B1",
+      "teacher_initial": "XY",
+      "course_code": "CS103",
+      "type": "Sessional",
+      "mode": "Onsite",
+      "start": "14:00",
+      "end": "16:00",
+      "room_id": "R103",
+      "group": null,
+      "is_cancelled": false,
+      "cancellation_reason": null
+    }
+  ]
+}

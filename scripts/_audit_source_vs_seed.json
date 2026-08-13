@@ -1,0 +1,60 @@
+{
+  "files": {
+    "faculty": {
+      "path": "C:\\Users\\GIGRBYTE\\Downloads\\Faculty List (1).docx",
+      "exists": true,
+      "bytes": 25736
+    },
+    "courses": {
+      "path": "C:\\Users\\GIGRBYTE\\Downloads\\COURSE LIST.docx",
+      "exists": true,
+      "bytes": 19119
+    },
+    "xlsx": {
+      "path": "C:\\Users\\GIGRBYTE\\Downloads\\Summer 2026 ( V- 0.4) (1).xlsx",
+      "exists": true,
+      "bytes": 58630
+    }
+  },
+  "faculty": {
+    "fromDoc": 45,
+    "inSeed": 47,
+    "inPublic": 47,
+    "missingInSeed": [],
+    "extraInSeedGuestOrOnlyTimetable": [
+      "MS",
+      "ST"
+    ],
+    "nameDiffs": [],
+    "nameDiffCount": 0
+  },
+  "courses": {
+    "codesParsedFromCourseDoc": 30,
+    "coursesInSeed": 35,
+    "codesInTimetable": 35,
+    "timetableCodesMissingFromSeedCourses": []
+  },
+  "timetable": {
+    "fromXlsxMerged": 293,
+    "inSeed": 293,
+    "inPublic": 293,
+    "missingInSeed": 0,
+    "extraInSeed": 0,
+    "sampleMissing": [],
+    "sampleExtra": [],
+    "teachersInTimetableNotInFacultyDoc": [
+      "MS",
+      "ST"
+    ],
+    "teachersInTimetableNotInSeed": [],
+    "seedEqualsPublicTeachers": true,
+    "seedEqualsPublicTimetable": true
+  },
+  "mismatches": [],
+  "xlsxMeta": {
+    "sheetNames": [
+      "V-0.4"
+    ],
+    "usedSheet": "V-0.4"
+  }
+}

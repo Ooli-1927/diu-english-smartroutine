@@ -1,0 +1,24 @@
+DIU Department of English · SmartRoutine — full project package
+==============================================================
+
+After unzip:
+
+1) Install Node.js 22+ (LTS)
+2) Open this folder in terminal
+3) npm install && npm run install:all
+4) Local run (Windows / macOS / Linux):
+     npm run dev
+   Then open http://localhost:5173
+
+5) Deploy (Render):
+   - Push this folder to GitHub, or upload as a Web Service
+   - Build: bash scripts/render-build.sh  (or see render.yaml / DEPLOY.md)
+   - Start: npm start
+
+Demo/seed credentials are generated at setup time and printed to the API console — see SETUP.md.
+Do NOT commit real .env / mail-smtp.json secrets.
+
+Product: DIU Department of English · SmartRoutine
+GitHub: https://github.com/Ooli-1927/diu-english-smartroutine
+Live site: check your Render dashboard (rename the web service there if the
+hostname still contains an old label).

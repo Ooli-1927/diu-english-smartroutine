@@ -1,0 +1,21 @@
+{
+  "name": "diu-english-smartroutine",
+  "private": true,
+  "version": "1.0.0",
+  "description": "DIU Department of English · SmartRoutine — React web + Express/SQLite API",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "install:all": "npm --prefix smartroutine-web install && npm --prefix smartroutine-api install",
+    "build": "npm --prefix smartroutine-web run build && node ./scripts/copy-web-dist.mjs",
+    "start": "npm --prefix smartroutine-api start",
+    "dev:api": "npm --prefix smartroutine-api run dev",
+    "dev:web": "npm --prefix smartroutine-web run dev",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:windows": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  }
+}

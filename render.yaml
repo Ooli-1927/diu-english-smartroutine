@@ -1,0 +1,29 @@
+# Free preview — MUST be a Web Service (Node), NOT a Static Site.
+# Plain black "Not Found" usually means Static Site was chosen by mistake.
+#
+# Dashboard: https://dashboard.render.com → New → Blueprint → this repo
+# Or: New → Web Service → connect repo → settings below
+
+services:
+  - type: web
+    name: diu-english-smartroutine
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: bash ./scripts/render-build.sh
+    startCommand: npm --prefix smartroutine-api start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.14.0"
+      - key: JWT_SECRET
+        generateValue: true
+      # Set in the Render dashboard to your real frontend origin(s), e.g.
+      # https://your-app.onrender.com  (comma-separated if multiple). Never use "*".
+      - key: CORS_ORIGIN
+        sync: false
+      - key: WEB_DIST
+        value: smartroutine-api/public
+      - key: NODE_ENV
+        value: production

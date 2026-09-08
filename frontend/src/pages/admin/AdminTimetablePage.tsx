@@ -4,7 +4,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Download, FileUp, Plus, Trash2, X } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { CLASS_MODES, CLASS_TYPES, DAYS } from '../../lib/constants';
-import { exportBatchRoutinePdf, exportTimetablePdf } from '../../lib/pdf';
+import {
+  exportBatchRoutinePdf,
+  exportTimetablePdf,
+  sectionsForBatch,
+} from '../../lib/pdf';
 import { parseRoutineFile, resolveRoutineImport } from '../../lib/routineImport';
 import {
   conflictLabel,
@@ -51,6 +55,7 @@ export function AdminTimetablePage() {
   const [day, setDay] = useState<DayCode | 'All'>((params.get('day') as DayCode) || 'All');
   const [q, setQ] = useState('');
   const [batchFilter, setBatchFilter] = useState('all');
+  const [sectionFilter, setSectionFilter] = useState('all');
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
@@ -68,12 +73,24 @@ export function AdminTimetablePage() {
 
   const totalClasses = store?.timetable.length || 0;
 
+  const batchSections = useMemo(() => {
+    if (!store || batchFilter === 'all') return [] as string[];
+    return sectionsForBatch(store, batchFilter);
+  }, [store, batchFilter]);
+
   const entries = useMemo(() => {
     const list = store?.timetable || [];
     const term = q.trim().toLowerCase();
     const filtered = list.filter((e) => {
       if (day !== 'All' && e.day !== day) return false;
       if (batchFilter !== 'all' && e.batch_id !== batchFilter) return false;
+      if (batchFilter !== 'all' && sectionFilter !== 'all') {
+        const entrySec = String(e.section || e.group_name || '')
+          .trim()
+          .toUpperCase();
+        // Section filter: that section + shared (empty) classes
+        if (entrySec && entrySec !== sectionFilter) return false;
+      }
       if (!term) return true;
       const course = courseByCode(e.course_code);
       const teacher = teacherByInitial(e.teacher_initial);
@@ -104,7 +121,17 @@ export function AdminTimetablePage() {
         ? a.start_time.localeCompare(b.start_time)
         : DAYS.indexOf(a.day) - DAYS.indexOf(b.day),
     );
-  }, [store, day, batchFilter, q, courseByCode, teacherByInitial, batchById, roomById]);
+  }, [
+    store,
+    day,
+    batchFilter,
+    sectionFilter,
+    q,
+    courseByCode,
+    teacherByInitial,
+    batchById,
+    roomById,
+  ]);
 
   useEffect(() => {
     setSelected((prev) => {
@@ -193,7 +220,8 @@ export function AdminTimetablePage() {
     return map;
   }, [dayConflicts]);
 
-  const filtersActive = Boolean(q.trim()) || batchFilter !== 'all' || day !== 'All';
+  const filtersActive =
+    Boolean(q.trim()) || batchFilter !== 'all' || sectionFilter !== 'all' || day !== 'All';
 
   useEffect(() => {
     const linkedDay = params.get('day') as DayCode | null;
@@ -299,6 +327,7 @@ export function AdminTimetablePage() {
   function clearFilters() {
     setQ('');
     setBatchFilter('all');
+    setSectionFilter('all');
     setDay('All');
     if (params.has('focus') || params.has('day')) setParams({}, { replace: true });
   }
@@ -378,7 +407,8 @@ export function AdminTimetablePage() {
 
   function exportBatchPdf() {
     if (!store || batchFilter === 'all') return;
-    void exportBatchRoutinePdf(store, batchFilter).catch((err) => {
+    const section = sectionFilter === 'all' ? null : sectionFilter;
+    void exportBatchRoutinePdf(store, batchFilter, section).catch((err) => {
       setError(err instanceof Error ? err.message : 'Batch PDF export failed');
     });
   }
@@ -441,6 +471,7 @@ export function AdminTimetablePage() {
       setDay('All');
       setQ('');
       setBatchFilter('all');
+      setSectionFilter('all');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
     } finally {
@@ -482,9 +513,14 @@ export function AdminTimetablePage() {
                   type="button"
                   className="btn-outline"
                   onClick={exportBatchPdf}
-                  title="Download the filtered batch routine as PDF"
+                  title={
+                    sectionFilter !== 'all'
+                      ? `Download Section ${sectionFilter} PDF`
+                      : 'Download full batch PDF'
+                  }
                 >
-                  <Download size={16} /> Batch PDF
+                  <Download size={16} />
+                  {sectionFilter !== 'all' ? `Sec ${sectionFilter} PDF` : 'Batch PDF'}
                 </button>
               ) : null}
               <label
@@ -681,7 +717,10 @@ export function AdminTimetablePage() {
         <select
           className="input tt-batch-filter"
           value={batchFilter}
-          onChange={(e) => setBatchFilter(e.target.value)}
+          onChange={(e) => {
+            setBatchFilter(e.target.value);
+            setSectionFilter('all');
+          }}
           aria-label="Filter by batch"
         >
           <option value="all">All batches</option>
@@ -691,6 +730,21 @@ export function AdminTimetablePage() {
             </option>
           ))}
         </select>
+        {batchFilter !== 'all' && batchSections.length > 0 ? (
+          <select
+            className="input tt-batch-filter"
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            aria-label="Filter by section"
+          >
+            <option value="all">All sections</option>
+            {batchSections.map((sec) => (
+              <option key={sec} value={sec}>
+                Section {sec}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <div className="day-pills dark tt-day-pills">
           <button
             type="button"

@@ -10,7 +10,14 @@ import {
 
 type Props =
   | { kind: 'full'; light?: boolean; className?: string; label?: string }
-  | { kind: 'batch'; batchId: string; light?: boolean; className?: string; label?: string }
+  | {
+      kind: 'batch';
+      batchId: string;
+      section?: string | null;
+      light?: boolean;
+      className?: string;
+      label?: string;
+    }
   | {
       kind: 'teacher';
       teacherInitial: string;
@@ -39,8 +46,12 @@ export function RoutinePdfButton(props: Props) {
     props.kind === 'full'
       ? 'Full PDF'
       : props.kind === 'batch'
-        ? 'Batch PDF'
-        : props.label || 'Download PDF';
+        ? props.section
+          ? `Sec ${String(props.section).toUpperCase()} PDF`
+          : 'Batch PDF'
+        : props.kind === 'student' && props.section
+          ? `Download Sec ${String(props.section).toUpperCase()} PDF`
+          : props.label || 'Download PDF';
 
   async function onClick() {
     if (!store || busy) return;
@@ -50,7 +61,7 @@ export function RoutinePdfButton(props: Props) {
       if (props.kind === 'full') {
         await exportTimetablePdf(store, store.timetable, 'DIU English Timetable');
       } else if (props.kind === 'batch') {
-        await exportBatchRoutinePdf(store, props.batchId);
+        await exportBatchRoutinePdf(store, props.batchId, props.section);
       } else if (props.kind === 'teacher') {
         await exportTeacherRoutinePdf(store, props.teacherInitial, props.teacherName);
       } else {
@@ -68,24 +79,52 @@ export function RoutinePdfButton(props: Props) {
     }
   }
 
+  const studentHasRows =
+    props.kind === 'student' &&
+    store &&
+    store.timetable.some((e) => {
+      if (e.batch_id !== props.batchId || e.is_cancelled) return false;
+      if (!props.section) return true;
+      const sec = String(props.section).trim().toUpperCase();
+      const entrySec = String(e.section || e.group_name || '')
+        .trim()
+        .toUpperCase();
+      return !entrySec || entrySec === sec;
+    });
+
+  const batchHasRows =
+    props.kind === 'batch' &&
+    store &&
+    store.timetable.some((e) => {
+      if (e.batch_id !== props.batchId || e.is_cancelled) return false;
+      if (!props.section) return true;
+      const sec = String(props.section).trim().toUpperCase();
+      const entrySec = String(e.section || e.group_name || '')
+        .trim()
+        .toUpperCase();
+      return !entrySec || entrySec === sec;
+    });
+
+  const teacherHasRows =
+    props.kind === 'teacher' &&
+    store &&
+    Boolean(String(props.teacherInitial || '').trim()) &&
+    store.timetable.some((e) => {
+      const entryInitial = String(e.teacher_initial || '')
+        .trim()
+        .toUpperCase();
+      const want = String(props.teacherInitial || '')
+        .trim()
+        .toUpperCase();
+      return entryInitial === want && !e.is_cancelled;
+    });
+
   const disabled =
     !store ||
     busy ||
-    (props.kind === 'batch' &&
-      !store.timetable.some((e) => e.batch_id === props.batchId && !e.is_cancelled)) ||
-    (props.kind === 'teacher' &&
-      !store.timetable.some(
-        (e) =>
-          e.teacher_initial.toUpperCase() === props.teacherInitial.toUpperCase() &&
-          !e.is_cancelled,
-      )) ||
-    (props.kind === 'student' &&
-      !store.timetable.some((e) => {
-        if (e.batch_id !== props.batchId || e.is_cancelled) return false;
-        if (!props.section) return true;
-        const entrySec = e.section || e.group_name;
-        return !entrySec || entrySec === props.section;
-      })) ||
+    (props.kind === 'batch' && !batchHasRows) ||
+    (props.kind === 'teacher' && !teacherHasRows) ||
+    (props.kind === 'student' && !studentHasRows) ||
     (props.kind === 'full' && !store.timetable.some((e) => !e.is_cancelled));
 
   return (
@@ -95,7 +134,17 @@ export function RoutinePdfButton(props: Props) {
         className={`btn-outline${props.light ? ' calendar-export__btn--light' : ''}`}
         style={{ width: 'auto' }}
         disabled={disabled}
-        title={disabled && !busy ? 'No active classes to export' : 'Download class routine PDF'}
+        title={
+          disabled && !busy
+            ? props.kind === 'teacher'
+              ? 'No active classes on your roster to export'
+              : 'No active classes to export'
+            : props.kind === 'student' && props.section
+              ? `Download only Section ${String(props.section).toUpperCase()} routine`
+              : props.kind === 'teacher'
+                ? 'Download your teaching schedule as PDF'
+                : 'Download class routine PDF'
+        }
         onClick={() => void onClick()}
       >
         <Download size={16} />

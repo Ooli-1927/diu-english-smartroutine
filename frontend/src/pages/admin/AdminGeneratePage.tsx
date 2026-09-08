@@ -212,7 +212,7 @@ export function AdminGeneratePage() {
                   <th>Teacher</th>
                   <th>Type</th>
                   <th>Mode</th>
-                  <th>Group</th>
+                  <th>Section</th>
                   <th>Per week</th>
                   <th />
                 </tr>
@@ -284,9 +284,16 @@ export function AdminGeneratePage() {
                     <td>
                       <input
                         className="input compact"
-                        placeholder="—"
+                        placeholder="A / B"
+                        title="Section (e.g. A or B)"
                         value={r.group_name || ''}
-                        onChange={(e) => updateRow(i, { group_name: e.target.value || null })}
+                        onChange={(e) =>
+                          updateRow(i, {
+                            group_name: e.target.value
+                              ? e.target.value.trim().toUpperCase()
+                              : null,
+                          })
+                        }
                       />
                     </td>
                     <td>

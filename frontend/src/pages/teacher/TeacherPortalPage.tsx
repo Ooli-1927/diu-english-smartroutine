@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CalendarClock,
   DoorOpen,
+  Download,
   XCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -10,13 +11,27 @@ import { useData } from '../../context/DataContext';
 import { ScheduleCard } from '../../components/ScheduleCard';
 import { UserAvatar } from '../../components/ProfileAvatar';
 import { CalendarExportButton } from '../../components/CalendarExportButton';
-import { RoutinePdfButton } from '../../components/RoutinePdfButton';
 import { BrandMark } from '../../components/BrandMark';
 import { PortalAlerts } from '../../components/PortalAlerts';
 import { CLASS_MODES, CLASS_TYPES, DAYS, formatTime, todayDay } from '../../lib/constants';
 import { conflictMessages } from '../../lib/conflicts';
+import { exportTeacherRoutinePdf } from '../../lib/pdf';
 import { listFreeRooms, listRescheduleOptions, type Suggestion } from '../../lib/resolve';
 import type { DayCode, TimetableEntry } from '../../lib/types';
+
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '/api';
+
+async function mailDeliveryHint(): Promise<'ready' | 'off' | 'unknown'> {
+  try {
+    const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return 'unknown';
+    const health = (await res.json()) as { mail?: string };
+    if (health.mail === 'outbox' || health.mail === 'off') return 'off';
+    return 'ready';
+  } catch {
+    return 'unknown';
+  }
+}
 
 export function TeacherPortalPage() {
   const { session } = useAuth();
@@ -34,17 +49,42 @@ export function TeacherPortalPage() {
   const [picked, setPicked] = useState<Suggestion | null>(null);
   const [filterDay, setFilterDay] = useState<DayCode | 'All'>('All');
   const [flash, setFlash] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [form, setForm] = useState({
     type: 'Lecture' as TimetableEntry['type'],
     mode: 'Onsite' as TimetableEntry['mode'],
   });
 
-  const initial = session?.teacherInitial || '';
+  const initial = (session?.teacherInitial || '').trim();
 
   const weekEntries = useMemo(() => {
     if (!store || !initial) return [];
-    return store.timetable.filter((e) => e.teacher_initial === initial);
+    const want = initial.toUpperCase();
+    return store.timetable.filter(
+      (e) => String(e.teacher_initial || '').trim().toUpperCase() === want,
+    );
   }, [store, initial]);
+
+  const activeWeekCount = useMemo(
+    () => weekEntries.filter((e) => !e.is_cancelled).length,
+    [weekEntries],
+  );
+
+  async function downloadMyPdf() {
+    if (!store || !initial || pdfBusy) return;
+    setPdfBusy(true);
+    setProblems([]);
+    try {
+      await exportTeacherRoutinePdf(store, initial, session?.name || null);
+      setFlash('Teaching schedule PDF downloaded.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'PDF download failed';
+      setProblems([msg]);
+      setFlash('');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   const entries = useMemo(() => {
     return weekEntries
@@ -109,24 +149,19 @@ export function TeacherPortalPage() {
       setProblems([]);
       setModal(null);
       if (kind === 'cancel' || kind === 'restore') {
-        try {
-          const res = await fetch('/api/health');
-          const health = (await res.json()) as { mail?: string };
-          if (health.mail === 'outbox' || health.mail === 'off') {
-            setFlash(
-              kind === 'cancel'
-                ? 'Class cancelled. In-app notices went out, but email delivery is off.'
-                : 'Class restored. Email delivery is off.',
-            );
-          } else {
-            setFlash(
-              kind === 'cancel'
-                ? 'Class cancelled — emails are being sent to the batch (check inbox/spam; first-time addresses may need a Confirm link).'
-                : 'Class restored — update emails are being sent.',
-            );
-          }
-        } catch {
-          setFlash(kind === 'cancel' ? 'Class cancelled.' : 'Class restored.');
+        const mail = await mailDeliveryHint();
+        if (mail === 'off') {
+          setFlash(
+            kind === 'cancel'
+              ? 'Class cancelled. In-app notices went out, but email delivery is off.'
+              : 'Class restored. Email delivery is off.',
+          );
+        } else {
+          setFlash(
+            kind === 'cancel'
+              ? 'Class cancelled — emails are being sent to the batch (check inbox/spam; first-time addresses may need a Confirm link).'
+              : 'Class restored — update emails are being sent.',
+          );
         }
       }
     } catch (err) {
@@ -164,10 +199,9 @@ export function TeacherPortalPage() {
       setProblems([]);
       setActive(null);
       try {
-        const res = await fetch('/api/health');
-        const health = (await res.json()) as { mail?: string };
+        const mail = await mailDeliveryHint();
         setFlash(
-          health.mail === 'outbox' || health.mail === 'off'
+          mail === 'off'
             ? 'Class restored. Email delivery is off.'
             : 'Class restored — update emails are being sent.',
         );
@@ -207,6 +241,21 @@ export function TeacherPortalPage() {
             </div>
           </div>
           <div className="teacher-hero__alerts">
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ width: 'auto' }}
+              disabled={!initial || activeWeekCount === 0 || pdfBusy || !store}
+              title={
+                activeWeekCount === 0
+                  ? 'No active classes on your roster'
+                  : 'Download your teaching schedule PDF'
+              }
+              onClick={() => void downloadMyPdf()}
+            >
+              <Download size={16} />
+              {pdfBusy ? 'Preparing…' : 'Download PDF'}
+            </button>
             <PortalAlerts noticesTo="/teacher/notifications" />
           </div>
           <div className="teacher-hero__photo">
@@ -248,19 +297,26 @@ export function TeacherPortalPage() {
         </div>
         {initial ? (
           <div className="schedule-export-row">
-            <RoutinePdfButton
-              kind="teacher"
-              teacherInitial={initial}
-              teacherName={session?.name || null}
-              label="Download PDF"
-            />
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ width: 'auto' }}
+              disabled={activeWeekCount === 0 || pdfBusy || !store}
+              title="Download your teaching schedule PDF"
+              onClick={() => void downloadMyPdf()}
+            >
+              <Download size={16} />
+              {pdfBusy ? 'Preparing…' : 'Download PDF'}
+            </button>
             <CalendarExportButton
               audience="teacher"
               entries={weekEntries}
               fileLabel={initial}
             />
           </div>
-        ) : null}
+        ) : (
+          <p className="muted small">Teacher initial missing — cannot export roster PDF.</p>
+        )}
         {problems.length > 0 && !modal && (
           <div className="warn-banner">
             <AlertTriangle size={16} />

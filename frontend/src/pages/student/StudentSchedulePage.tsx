@@ -7,6 +7,7 @@ import { ScheduleCard } from '../../components/ScheduleCard';
 import { CalendarExportButton } from '../../components/CalendarExportButton';
 import { RoutinePdfButton } from '../../components/RoutinePdfButton';
 import { DAYS, todayDay } from '../../lib/constants';
+import { filterBatchSectionEntries } from '../../lib/pdf';
 import type { DayCode } from '../../lib/types';
 
 export function StudentSchedulePage() {
@@ -15,18 +16,13 @@ export function StudentSchedulePage() {
   const [day, setDay] = useState<DayCode>(todayDay());
 
   const batchId = session?.batchId || '';
-  const section = session?.section || null;
+  const section = session?.section?.trim().toUpperCase() || null;
   const batch = batchById(batchId);
   const today = todayDay();
 
   const weekEntries = useMemo(() => {
     if (!store || !batchId) return [];
-    return store.timetable.filter((e) => {
-      if (e.batch_id !== batchId) return false;
-      if (!section) return true;
-      const entrySection = e.section || e.group_name;
-      return !entrySection || entrySection === section;
-    });
+    return filterBatchSectionEntries(store.timetable, batchId, section);
   }, [store, batchId, section]);
 
   const entries = useMemo(() => {
@@ -61,13 +57,17 @@ export function StudentSchedulePage() {
             section={section}
             studentLabel={session?.name || null}
             light
-            label="Download PDF"
+            label={section ? `Download Sec ${section} PDF` : 'Download PDF'}
           />
           <CalendarExportButton
             light
             audience="student"
             entries={weekEntries}
-            fileLabel={batch?.name || batchId}
+            fileLabel={
+              section
+                ? `${batch?.name || batchId}_Sec_${section}`
+                : batch?.name || batchId
+            }
           />
         </div>
       ) : null}
@@ -92,12 +92,23 @@ export function StudentSchedulePage() {
             <p>Your account is not linked to a batch. Ask an admin to set your batch.</p>
           </div>
         )}
+        {batchId && !section && (
+          <div className="warn-banner" style={{ marginBottom: '0.75rem' }}>
+            <p>
+              Your account has no section set. PDF will include the whole batch — ask an admin to
+              assign your section (A/B).
+            </p>
+          </div>
+        )}
         {batchId && entries.length === 0 && (
           <div className="empty-state">
             <div className="empty-icon">
               <School size={40} />
             </div>
-            <p>No classes on {day} for {batch?.name || batchId}</p>
+            <p>
+              No classes on {day} for {batch?.name || batchId}
+              {section ? ` · Sec ${section}` : ''}
+            </p>
           </div>
         )}
         {entries.map((e) => (

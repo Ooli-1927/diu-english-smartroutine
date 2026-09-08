@@ -2558,6 +2558,20 @@ textarea.input {
   color: var(--danger, #c62828);
 }
 
+.batch-section-pdfs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: 16rem;
+}
+
+.batch-section-pdfs .btn-outline.compact {
+  padding: 0.28rem 0.55rem;
+  font-size: 0.75rem;
+  width: auto;
+  gap: 0.3rem;
+}
+
 .calendar-export__hint {
   margin: 0;
   max-width: 36rem;
@@ -7692,9 +7706,11 @@ select.input:focus {
 
 .teacher-hero__alerts {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  gap: 0.6rem;
   padding-top: 4px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .teacher-hero.compact .row-between {

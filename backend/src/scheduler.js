@@ -250,6 +250,7 @@ export function generateSchedule({
         teacher_initial: req.teacher_initial,
         course_code: req.course_code,
         type: req.type || 'Lecture',
+        section: group,
         group_name: group,
         room_id: room.room,
         mode: req.mode || 'Onsite',

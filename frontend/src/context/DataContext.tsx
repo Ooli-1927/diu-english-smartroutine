@@ -360,6 +360,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           student_id: student.student_id,
           name: student.name,
           batch_id: student.batch_id,
+          section: student.section ?? null,
           email: student.email,
           phone: student.phone,
           profile_pic: student.profile_pic,
@@ -639,6 +640,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     async (role: 'student' | 'teacher', id: string, current: string, next: string) => {
       if (isApi) {
         await api.changePassword(current, next);
+        if (!store) return;
+        if (role === 'student') {
+          commitApi({
+            ...store,
+            students: store.students.map((s) =>
+              s.id === id ? { ...s, has_changed_password: true, password: null } : s,
+            ),
+          });
+        } else {
+          commitApi({
+            ...store,
+            teachers: store.teachers.map((t) =>
+              t.id === id ? { ...t, has_changed_password: true, password: null } : t,
+            ),
+          });
+        }
         return;
       }
       const vault = getStoreVault();
@@ -661,7 +678,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await upsertTeacher({ ...t, password: next, has_changed_password: true });
       }
     },
-    [upsertStudent, upsertTeacher, isApi],
+    [upsertStudent, upsertTeacher, isApi, store, commitApi],
   );
 
   const updateOwnProfilePic = useCallback(

@@ -507,10 +507,13 @@ advancedRouter.post('/negotiations/:id/respond', requireAuth, async (req, res, n
 /* ── Attendance QR ─────────────────────────────────────── */
 advancedRouter.post('/attendance/open', requireAuth, async (req, res, next) => {
   try {
+    const role = req.session?.role;
+    if (role !== 'super_admin' && role !== 'teacher' && role !== 'teacher_admin') {
+      return res.status(403).json({ error: 'Teachers or chairman only' });
+    }
     const entryId = String(req.body?.entryId || '');
     const entry = await findOne('timetable_entries', { id: entryId });
     if (!entry) return res.status(404).json({ error: 'Class not found' });
-    const role = req.session?.role;
     if (
       role !== 'super_admin' &&
       req.session?.teacherInitial &&

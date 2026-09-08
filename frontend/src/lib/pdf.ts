@@ -57,7 +57,12 @@ export function toPdfRows(store: StoreState, entries: TimetableEntry[]): Routine
     const course = store.courses.find((c) => c.code === e.course_code);
     const batch = store.batches.find((b) => b.id === e.batch_id);
     const room = store.rooms.find((r) => r.id === e.room_id || r.name === e.room_id);
-    const teacher = store.teachers.find((t) => t.initial === e.teacher_initial);
+    const want = String(e.teacher_initial || '')
+      .trim()
+      .toUpperCase();
+    const teacher = store.teachers.find(
+      (t) => String(t.initial || '').trim().toUpperCase() === want,
+    );
     return {
       day: e.day,
       batch_id: e.batch_id,
@@ -171,6 +176,49 @@ async function loadImageDataUrl(path: string): Promise<string | null> {
   }
 }
 
+/** Fit logo inside a box while keeping aspect ratio (avoids squashed seals). */
+function addLogoFitted(
+  doc: jsPDF,
+  dataUrl: string,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+) {
+  try {
+    const props = doc.getImageProperties(dataUrl);
+    const ratio = (props.width || 1) / (props.height || 1);
+    let w = boxW;
+    let h = boxW / ratio;
+    if (h > boxH) {
+      h = boxH;
+      w = boxH * ratio;
+    }
+    const x = boxX + (boxW - w) / 2;
+    const y = boxY + (boxH - h) / 2;
+    const format = props.fileType === 'JPEG' ? 'JPEG' : 'PNG';
+    doc.addImage(dataUrl, format, x, y, w, h);
+  } catch {
+    try {
+      doc.addImage(dataUrl, 'PNG', boxX, boxY, boxW, boxH);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function pdfSafe(text: string): string {
+  // Helvetica uses WinAnsi (covers ASCII + Latin-1). Keep · – — etc.; drop the rest.
+  return String(text || '')
+    .normalize('NFKC')
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '');
+}
+
 function drawHeader(
   doc: jsPDF,
   logos: { uni: string | null; eng: string | null },
@@ -182,7 +230,10 @@ function drawHeader(
   },
 ) {
   const pageW = doc.internal.pageSize.getWidth();
-  const headerH = opts.compact ? 26 : 36;
+  const headerH = opts.compact ? 28 : 38;
+  const documentTitle = pdfSafe(opts.documentTitle);
+  const sessionLine = opts.sessionLine ? pdfSafe(opts.sessionLine) : undefined;
+  const generated = pdfSafe(opts.generated);
 
   doc.setFillColor(...C.navyDeep);
   doc.rect(0, 0, pageW, headerH, 'F');
@@ -191,27 +242,15 @@ function drawHeader(
   doc.setFillColor(...C.blue);
   doc.rect(0, headerH + 1.6, pageW, 0.7, 'F');
 
-  const logoY = opts.compact ? 4 : 6;
-  const logoSize = opts.compact ? 16 : 22;
-  if (logos.uni) {
-    try {
-      doc.addImage(logos.uni, 'PNG', 10, logoY, logoSize, logoSize);
-    } catch {
-      /* ignore */
-    }
-  }
-  if (logos.eng) {
-    try {
-      doc.addImage(logos.eng, 'PNG', pageW - 10 - logoSize, logoY, logoSize, logoSize);
-    } catch {
-      /* ignore */
-    }
-  }
+  const logoBox = opts.compact ? 18 : 24;
+  const logoY = opts.compact ? 5 : 7;
+  if (logos.uni) addLogoFitted(doc, logos.uni, 8, logoY, logoBox, logoBox);
+  if (logos.eng) addLogoFitted(doc, logos.eng, pageW - 8 - logoBox, logoY, logoBox, logoBox);
 
   doc.setTextColor(...C.white);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(opts.compact ? 11 : 13);
-  doc.text('DAFFODIL INTERNATIONAL UNIVERSITY', pageW / 2, opts.compact ? 9 : 11, {
+  doc.text('DAFFODIL INTERNATIONAL UNIVERSITY', pageW / 2, opts.compact ? 10 : 12, {
     align: 'center',
   });
   doc.setFont('helvetica', 'normal');
@@ -220,7 +259,7 @@ function drawHeader(
   doc.text(
     'Faculty of Humanities & Social Sciences  ·  Department of English',
     pageW / 2,
-    opts.compact ? 14.5 : 17.5,
+    opts.compact ? 15.5 : 18.5,
     { align: 'center' },
   );
 
@@ -228,19 +267,19 @@ function drawHeader(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(...C.white);
-    doc.text(opts.documentTitle, pageW / 2, 27, { align: 'center' });
+    doc.text(documentTitle, pageW / 2, 28, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(180, 205, 225);
-    const sub = [opts.sessionLine, `Generated ${opts.generated}`].filter(Boolean).join('   ·   ');
-    doc.text(sub, pageW / 2, 32.5, { align: 'center' });
+    const sub = [sessionLine, `Generated ${generated}`].filter(Boolean).join('   ·   ');
+    doc.text(sub, pageW / 2, 33.5, { align: 'center' });
     return headerH + 8;
   }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(...C.white);
-  doc.text(opts.documentTitle, pageW / 2, 21.5, { align: 'center' });
+  doc.text(documentTitle, pageW / 2, 23, { align: 'center' });
   return headerH + 6;
 }
 
@@ -556,7 +595,7 @@ async function exportScopedRoutinePdf(
   doc.setTextColor(...C.navy);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text(opts.note, 14, y + 5.2);
+  doc.text(pdfSafe(opts.note), 14, y + 5.2);
   y += 12;
 
   if (!rows.length) {
@@ -565,15 +604,53 @@ async function exportScopedRoutinePdf(
     doc.text('No active classes in this schedule.', pageW / 2, y + 24, { align: 'center' });
   }
 
+  const usableW = pageW - 20;
   const head = opts.teacherView
     ? ['Time', 'Batch', 'Code', 'Course title', 'Room', 'Sec', 'Type']
     : ['Time', 'Code', 'Course title', 'Teacher', 'Room', 'Sec', 'Type'];
+
+  const teacherCols = (() => {
+    const time = 36;
+    const batch = 32;
+    const code = 34;
+    const room = 22;
+    const sec = 16;
+    const type = 24;
+    const title = Math.max(60, usableW - (time + batch + code + room + sec + type));
+    return {
+      0: { cellWidth: time,halign: 'center' as const },
+      1: { cellWidth: batch,halign: 'left' as const },
+      2: { cellWidth: code,halign: 'left' as const, fontStyle: 'bold' as const },
+      3: { cellWidth: title,halign: 'left' as const },
+      4: { cellWidth: room,halign: 'center' as const },
+      5: { cellWidth: sec,halign: 'center' as const },
+      6: { cellWidth: type,halign: 'center' as const },
+    };
+  })();
+  const studentCols = (() => {
+    const time = 36;
+    const code = 34;
+    const teacher = 58;
+    const room = 22;
+    const sec = 16;
+    const type = 24;
+    const title = Math.max(60, usableW - (time + code + teacher + room + sec + type));
+    return {
+      0: { cellWidth: time,halign: 'center' as const },
+      1: { cellWidth: code,halign: 'left' as const, fontStyle: 'bold' as const },
+      2: { cellWidth: title,halign: 'left' as const },
+      3: { cellWidth: teacher,halign: 'left' as const },
+      4: { cellWidth: room,halign: 'center' as const },
+      5: { cellWidth: sec,halign: 'center' as const },
+      6: { cellWidth: type,halign: 'center' as const },
+    };
+  })();
 
   for (const day of DAYS) {
     const dayRows = rows.filter((r) => r.day === day);
     if (!dayRows.length) continue;
 
-    if (y > 170) {
+    if (y > 168) {
       doc.addPage();
       y = drawHeader(doc, logos, {
         documentTitle: `${opts.documentTitle} (continued)`,
@@ -584,7 +661,7 @@ async function exportScopedRoutinePdf(
     }
 
     doc.setFillColor(...C.navy);
-    doc.roundedRect(10, y, pageW - 20, 6.5, 1.2, 1.2, 'F');
+    doc.roundedRect(10, y, usableW, 6.5, 1.2, 1.2, 'F');
     doc.setTextColor(...C.white);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
@@ -607,89 +684,168 @@ async function exportScopedRoutinePdf(
         opts.teacherView
           ? [
               timeRange(r.start_time, r.end_time),
-              r.batch_name || r.batch_id,
-              r.course_code,
-              r.course_title || '—',
-              roomLabel(r),
-              sectionLabel(r),
-              classKind(r),
+              pdfSafe(r.batch_name || r.batch_id),
+              pdfSafe(r.course_code),
+              pdfSafe(r.course_title || '—'),
+              pdfSafe(roomLabel(r)),
+              pdfSafe(sectionLabel(r)),
+              pdfSafe(classKind(r)),
             ]
-          : rowCells(r, false).slice(1),
+          : rowCells(r, false).slice(1).map((c) => pdfSafe(String(c))),
       ),
-      columnStyles: opts.teacherView
-        ? {
-            0: { cellWidth: 30, halign: 'center' },
-            1: { cellWidth: 28, halign: 'left' },
-            2: { cellWidth: 28, halign: 'left', fontStyle: 'bold' },
-            3: { cellWidth: 72, halign: 'left' },
-            4: { cellWidth: 20, halign: 'center' },
-            5: { cellWidth: 14, halign: 'center' },
-            6: { cellWidth: 20, halign: 'center' },
-          }
-        : {
-            0: { cellWidth: 32, halign: 'center' },
-            1: { cellWidth: 28, halign: 'left', fontStyle: 'bold' },
-            2: { cellWidth: 78, halign: 'left' },
-            3: { cellWidth: 55, halign: 'left' },
-            4: { cellWidth: 20, halign: 'center' },
-            5: { cellWidth: 14, halign: 'center' },
-            6: { cellWidth: 20, halign: 'center' },
-          },
+      columnStyles: opts.teacherView ? teacherCols : studentCols,
+      tableWidth: usableW,
     });
     y = lastTableY(doc, y) + 6;
+  }
+
+  // Import appendix so scoped PDFs can be re-imported like Full PDF
+  try {
+    const payload = JSON.stringify({ version: 1, entries: rows });
+    doc.addPage();
+    doc.setFillColor(...C.navyDeep);
+    doc.rect(0, 0, pageW, 22, 'F');
+    doc.setTextColor(...C.white);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('Appendix — SmartRoutine import data', 14, 10);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(190, 210, 228);
+    doc.text('System use only. Skip this page when printing the official class routine.', 14, 16);
+    doc.setTextColor(...C.muted);
+    doc.setFontSize(4);
+    const blob = `${ROUTINE_JSON_START}${payload}${ROUTINE_JSON_END}`;
+    doc.text(doc.splitTextToSize(blob, pageW - 28), 14, 30);
+  } catch {
+    /* Appendix is optional — still deliver the printable schedule pages */
   }
 
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
+    const isImport = i === total && doc.getNumberOfPages() > 1;
     drawFooter(
       doc,
       i,
       total,
       generated,
-      'Daffodil International University · Department of English · Class routine',
+      isImport
+        ? 'DIU English · SmartRoutine · Do not print this page'
+        : 'Daffodil International University · Department of English · Class routine',
     );
   }
   doc.save(opts.fileName);
 }
 
-/** One batch only — chairman, or shared download */
-export async function exportBatchRoutinePdf(store: StoreState, batchId: string) {
-  const batch = store.batches.find((b) => b.id === batchId);
-  const entries = store.timetable.filter((e) => e.batch_id === batchId);
-  const safe = (batch?.name || batchId).replace(/[^\w\-]+/g, '_');
-  await exportScopedRoutinePdf(store, entries, {
-    kind: 'batch',
-    documentTitle: `Batch routine  ·  ${batch?.name || batchId}`,
-    bannerNote: batch?.session
-      ? `Session ${sessionLabel(batch.session)}  ·  ${batch.name}`
-      : batch?.name || batchId,
-    fileName: `DIU_English_Batch_${safe}.pdf`,
-    note: 'Batch timetable  ·  Department of English, DIU',
+/** Normalize section / group token from a timetable row. */
+export function entrySectionKey(e: {
+  section?: string | null;
+  group_name?: string | null;
+}): string | null {
+  const s = String(e.section || e.group_name || '')
+    .trim()
+    .toUpperCase();
+  return s || null;
+}
+
+/** Active sections used by a batch in the live timetable. */
+export function sectionsForBatch(store: StoreState, batchId: string): string[] {
+  const set = new Set<string>();
+  for (const e of store.timetable) {
+    if (e.batch_id !== batchId || e.is_cancelled) continue;
+    const sec = entrySectionKey(e);
+    if (sec) set.add(sec);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Filter classes for one batch, optionally one section.
+ * When section is set: that section's classes + shared (no-section) classes.
+ * Other sections are excluded.
+ */
+export function filterBatchSectionEntries(
+  entries: TimetableEntry[],
+  batchId: string,
+  section?: string | null,
+): TimetableEntry[] {
+  const sec = section?.trim().toUpperCase() || null;
+  return entries.filter((e) => {
+    if (e.batch_id !== batchId) return false;
+    if (!sec) return true;
+    const entrySec = entrySectionKey(e);
+    if (!entrySec) return true; // shared whole-batch class
+    return entrySec === sec;
   });
 }
 
-/** Teacher: own teaching load */
+/** One batch, optionally one section — chairman / student shared export */
+export async function exportBatchRoutinePdf(
+  store: StoreState,
+  batchId: string,
+  section?: string | null,
+) {
+  const batch = store.batches.find((b) => b.id === batchId);
+  const sec = section?.trim().toUpperCase() || null;
+  const entries = filterBatchSectionEntries(store.timetable, batchId, sec);
+  const safeBatch = (batch?.name || batchId).replace(/[^\w\-]+/g, '_');
+  const title = sec
+    ? `Section routine  ·  ${batch?.name || batchId}  ·  Sec ${sec}`
+    : `Batch routine  ·  ${batch?.name || batchId}`;
+  const banner = [
+    batch?.session ? `Session ${sessionLabel(batch.session)}` : null,
+    batch?.name || batchId,
+    sec ? `Section ${sec}` : null,
+  ]
+    .filter(Boolean)
+    .join('  ·  ');
+  await exportScopedRoutinePdf(store, entries, {
+    kind: 'batch',
+    documentTitle: title,
+    bannerNote: banner,
+    fileName: sec
+      ? `DIU_English_Batch_${safeBatch}_Sec_${sec}.pdf`
+      : `DIU_English_Batch_${safeBatch}.pdf`,
+    note: sec
+      ? `Section ${sec} timetable  ·  Department of English, DIU`
+      : 'Batch timetable  ·  Department of English, DIU',
+  });
+}
+
+/** Teacher: own teaching load (case-insensitive initial match) */
 export async function exportTeacherRoutinePdf(
   store: StoreState,
   teacherInitial: string,
   teacherName?: string | null,
 ) {
-  const initial = teacherInitial.toUpperCase();
-  const teacher = store.teachers.find((t) => t.initial.toUpperCase() === initial) || null;
-  const entries = store.timetable.filter((e) => e.teacher_initial.toUpperCase() === initial);
+  const initial = String(teacherInitial || '')
+    .trim()
+    .toUpperCase();
+  if (!initial) throw new Error('Teacher initial is missing');
+
+  const teacher =
+    store.teachers.find((t) => String(t.initial || '').trim().toUpperCase() === initial) || null;
+  const entries = store.timetable.filter(
+    (e) => String(e.teacher_initial || '').trim().toUpperCase() === initial,
+  );
+  if (!entries.some((e) => !e.is_cancelled)) {
+    throw new Error('No active classes found for this teacher');
+  }
+
   const label = teacherName || teacher?.name || initial;
+  const safeName = label.replace(/[^\w\-]+/g, '_').slice(0, 40);
   await exportScopedRoutinePdf(store, entries, {
     kind: 'teacher',
     documentTitle: `Teaching schedule  ·  ${label} (${initial})`,
     bannerNote: `${label}  ·  ${initial}`,
-    fileName: `DIU_English_Teacher_${initial}.pdf`,
+    fileName: `DIU_English_Teacher_${initial}_${safeName}.pdf`,
     note: 'Personal teaching timetable  ·  Department of English, DIU',
     teacherView: true,
   });
 }
 
-/** Student: own batch (+ section when set) */
+/** Student: own batch + section only (same filter as My Schedule) */
 export async function exportStudentRoutinePdf(
   store: StoreState,
   batchId: string,
@@ -697,22 +853,23 @@ export async function exportStudentRoutinePdf(
   studentLabel?: string | null,
 ) {
   const batch = store.batches.find((b) => b.id === batchId);
-  const sec = section?.trim() || null;
-  const entries = store.timetable.filter((e) => {
-    if (e.batch_id !== batchId) return false;
-    if (!sec) return true;
-    const entrySec = e.section || e.group_name;
-    return !entrySec || entrySec === sec;
-  });
+  const sec = section?.trim().toUpperCase() || null;
+  const entries = filterBatchSectionEntries(store.timetable, batchId, sec);
   const titleBits = [batch?.name || batchId, sec ? `Sec ${sec}` : null, studentLabel]
     .filter(Boolean)
     .join(' · ');
   const safe = titleBits.replace(/[^\w\-]+/g, '_').slice(0, 60);
   await exportScopedRoutinePdf(store, entries, {
     kind: 'student',
-    documentTitle: `My class routine  ·  ${titleBits}`,
+    documentTitle: sec
+      ? `My section routine  ·  ${titleBits}`
+      : `My class routine  ·  ${titleBits}`,
     bannerNote: titleBits,
-    fileName: `DIU_English_Student_${safe || batchId}.pdf`,
-    note: 'Personal student timetable  ·  Department of English, DIU',
+    fileName: sec
+      ? `DIU_English_Student_${safe || batchId}_Sec_${sec}.pdf`
+      : `DIU_English_Student_${safe || batchId}.pdf`,
+    note: sec
+      ? `Section ${sec} student timetable  ·  Department of English, DIU`
+      : 'Personal student timetable  ·  Department of English, DIU',
   });
 }

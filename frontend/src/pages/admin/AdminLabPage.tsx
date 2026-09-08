@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useData } from '../../context/DataContext';
-import { DAYS } from '../../lib/constants';
+import { DAYS, todayDay } from '../../lib/constants';
 import type { DayCode, TimetableEntry } from '../../lib/types';
 
 type Tab =
@@ -324,6 +324,9 @@ function NegotiatePanel({
         proposal: {
           moveEntryId: b,
           day: ea?.day,
+          start_time: ea?.start_time,
+          end_time: ea?.end_time,
+          room_id: ea?.room_id ?? null,
           targetTeacher: eb?.teacher_initial,
         },
       });
@@ -654,7 +657,14 @@ function AttendanceAdminPanel({
   setError: (v: string) => void;
   entries: TimetableEntry[];
 }) {
-  const today = useMemo(() => entries.filter((e) => !e.is_cancelled).slice(0, 40), [entries]);
+  const weekday = todayDay();
+  const today = useMemo(
+    () =>
+      entries
+        .filter((e) => !e.is_cancelled && e.day === weekday)
+        .sort((a, b) => a.start_time.localeCompare(b.start_time)),
+    [entries, weekday],
+  );
   const [session, setSession] = useState<{ token: string; scanUrl: string; expires_at: string } | null>(
     null,
   );
@@ -663,9 +673,15 @@ function AttendanceAdminPanel({
   return (
     <section className="card pad stack">
       <h3>QR attendance</h3>
-      <p className="muted">Open a 30-minute scan session for a class. Students use /student/attendance.</p>
+      <p className="muted">
+        Open a 30-minute scan session for today&apos;s classes ({weekday}). Students use
+        /student/attendance.
+      </p>
       <div className="row-gap wrap">
-        {today.slice(0, 8).map((e: TimetableEntry) => (
+        {today.length === 0 && (
+          <p className="muted">No active classes scheduled for {weekday}.</p>
+        )}
+        {today.slice(0, 12).map((e: TimetableEntry) => (
           <button
             key={e.id}
             type="button"

@@ -57,11 +57,16 @@ export function TeacherProfilePage() {
 
   async function saveProfile() {
     if (!teacher) return;
-    const updated = { ...teacher, ...form };
-    await upsertTeacher(updated);
-    updateSession({ name: form.name, email: form.email });
-    setEditing(false);
-    setMsg('Profile saved');
+    setErr('');
+    try {
+      const updated = { ...teacher, ...form };
+      await upsertTeacher(updated);
+      updateSession({ name: form.name, email: form.email });
+      setEditing(false);
+      setMsg('Profile saved');
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Could not save profile');
+    }
   }
 
   async function savePhoto(dataUrl: string | null) {

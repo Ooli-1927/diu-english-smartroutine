@@ -125,9 +125,14 @@ export function useNotifications() {
 
   const markRead = useCallback(
     async (id: string) => {
+      const prevItems = items;
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
       if (isApi) {
-        await api.markNotificationRead(id);
+        try {
+          await api.markNotificationRead(id);
+        } catch {
+          setItems(prevItems);
+        }
         return;
       }
       setLocalReadIds((prev) => {
@@ -136,7 +141,7 @@ export function useNotifications() {
         return next;
       });
     },
-    [isApi],
+    [isApi, items],
   );
 
   const markAllRead = useCallback(async () => {

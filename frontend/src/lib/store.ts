@@ -453,6 +453,7 @@ export function loginWithStore(
       email: student.email,
       studentId: student.student_id,
       batchId: student.batch_id,
+      section: student.section || null,
       profilePic: student.profile_pic ?? null,
     };
   }

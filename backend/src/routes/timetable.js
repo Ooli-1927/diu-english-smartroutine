@@ -144,13 +144,14 @@ timetableRouter.get('/timetable/requirements', adminOnly, async (req, res, next)
     const rows = await findMany('timetable_entries', filter);
     const groups = new Map();
     for (const e of rows) {
+      const group = e.group_name || e.section || null;
       const key = [
         e.batch_id,
         e.course_code,
         e.teacher_initial,
         e.type,
         e.mode,
-        e.group_name ?? '',
+        group ?? '',
       ].join('\0');
       if (!groups.has(key)) {
         groups.set(key, {
@@ -159,7 +160,7 @@ timetableRouter.get('/timetable/requirements', adminOnly, async (req, res, next)
           teacher_initial: e.teacher_initial,
           type: e.type,
           mode: e.mode,
-          group_name: e.group_name,
+          group_name: group,
           sessions_per_week: 0,
         });
       }

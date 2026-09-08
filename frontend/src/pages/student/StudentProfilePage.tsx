@@ -22,6 +22,7 @@ import { ProfileAvatar } from '../../components/ProfileAvatar';
 import { GoogleCalendarPanel } from '../../components/GoogleCalendarPanel';
 import { InstallAppButton } from '../../components/InstallAppButton';
 import { todayDay } from '../../lib/constants';
+import { filterBatchSectionEntries } from '../../lib/pdf';
 
 export function StudentProfilePage() {
   const { session, logout, updateSession } = useAuth();
@@ -40,22 +41,19 @@ export function StudentProfilePage() {
   const [loading, setLoading] = useState(false);
 
   const stats = useMemo(() => {
-    const mine = (store?.timetable || []).filter(
-      (e) => {
-        if (e.batch_id !== session?.batchId || e.is_cancelled) return false;
-        const sec = session?.section;
-        if (!sec) return true;
-        const entrySec = e.section || e.group_name;
-        return !entrySec || entrySec === sec;
-      },
-    );
+    const mine =
+      !store || !session?.batchId
+        ? []
+        : filterBatchSectionEntries(store.timetable, session.batchId, session.section).filter(
+            (e) => !e.is_cancelled,
+          );
     const today = mine.filter((e) => e.day === todayDay()).length;
     return {
       week: mine.length,
       today,
       courses: new Set(mine.map((e) => e.course_code)).size,
     };
-  }, [store, session?.batchId]);
+  }, [store, session?.batchId, session?.section]);
 
   async function savePhoto(dataUrl: string | null) {
     if (!session) return;

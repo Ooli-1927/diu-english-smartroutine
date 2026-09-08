@@ -100,11 +100,22 @@ function parseEmbeddedJson(text: string): ParsedRoutine | null {
   }
 }
 
+/** Parse section token: A–G letter sections or G1-style groups. */
+function parseSectionToken(text: string): string | null {
+  const secNamed = text.match(/\b(?:Sec(?:tion)?\.?\s*)([A-G])\b/i);
+  if (secNamed?.[1]) return secNamed[1].toUpperCase();
+  const group = text.match(/\b(G\d+)\b/i);
+  if (group?.[1]) return group[1].toUpperCase();
+  const lone = text.match(/(?:^|[\s|/])([A-G])(?:$|[\s|/])/i);
+  if (lone?.[1]) return lone[1].toUpperCase();
+  return null;
+}
+
 /** Parse the visible export table when embedded JSON is missing. */
 function parseTableText(text: string): ImportDraft[] {
   const rows: ImportDraft[] = [];
   const lineRe =
-    /^(Sat|Sun|Mon|Tue|Wed|Thu|Fri)\s+(.+?)\s+([A-Z]{1,6}\s?\d{2,4})\s+.*?([A-Z]{1,6})\s+(Lecture|Tutorial|Sessional|Online)\s+(Onsite|Online|Offline)\s+(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\s+(\S.*?)(?:\s+(G\d+|Cancelled|Active))?/i;
+    /^(Sat|Sun|Mon|Tue|Wed|Thu|Fri)\s+(.+?)\s+([A-Z]{1,6}\s?\d{2,4})\s+.*?([A-Z]{1,6})\s+(Lecture|Tutorial|Sessional|Online)\s+(Onsite|Online|Offline)\s+(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\s+(\S.*?)(?:\s+(G\d+|[A-G]|Cancelled|Active))?/i;
 
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -112,7 +123,7 @@ function parseTableText(text: string): ImportDraft[] {
     const m = trimmed.match(lineRe);
     if (m) {
       const roomToken = m[9].replace(/\s+(Active|Cancelled)$/i, '').trim();
-      const groupMatch = trimmed.match(/\b(G\d+)\b/i);
+      const section = parseSectionToken(trimmed);
       rows.push({
         day: m[1] as DayCode,
         batch_id: m[2].trim(),
@@ -123,8 +134,8 @@ function parseTableText(text: string): ImportDraft[] {
         start_time: normalizeTime(m[7]),
         end_time: normalizeTime(m[8]),
         room_id: /online/i.test(roomToken) ? null : roomToken,
-        group_name: groupMatch?.[1] || null,
-        section: groupMatch?.[1] || null,
+        group_name: section,
+        section,
         is_cancelled: /cancelled/i.test(trimmed),
         cancellation_reason: null,
       });
@@ -136,6 +147,7 @@ function parseTableText(text: string): ImportDraft[] {
       /^(Sat|Sun|Mon|Tue|Wed|Thu|Fri)\b.*?([A-Z]{1,6}\s?\d{2,4}).*?\b([A-Z]{2,6})\b.*?(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})(?:.*?(\d{3,4}(?:\s*\([^)]+\))?))?/i,
     );
     if (loose && asDay(loose[1])) {
+      const section = parseSectionToken(trimmed);
       rows.push({
         day: loose[1] as DayCode,
         batch_id: '',
@@ -146,8 +158,8 @@ function parseTableText(text: string): ImportDraft[] {
         start_time: normalizeTime(loose[4]),
         end_time: normalizeTime(loose[5]),
         room_id: loose[6] || null,
-        group_name: trimmed.match(/\b(G\d+)\b/i)?.[1] || null,
-        section: trimmed.match(/\b(G\d+)\b/i)?.[1] || null,
+        group_name: section,
+        section,
         is_cancelled: false,
         cancellation_reason: null,
       });

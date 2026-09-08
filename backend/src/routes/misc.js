@@ -176,9 +176,16 @@ miscRouter.get('/notifications', requireAuth, async (req, res, next) => {
       return res.json(rows.map(notificationOut));
     }
     if (role === 'student') {
+      const student = await findOne('students', { id: req.session.id });
+      const liveBatchId = student?.batch_id || batchId || null;
+      const liveSection = String(student?.section || req.session.section || '')
+        .trim()
+        .toUpperCase();
       const sectionKey =
-        req.session.section && batchId ? `${batchId}:${req.session.section}` : null;
-      const recipientIds = [batchId, studentId].filter(Boolean);
+        liveSection && liveBatchId ? `${liveBatchId}:${liveSection}` : null;
+      const recipientIds = [liveBatchId, studentId || student?.student_id]
+        .filter(Boolean)
+        .map(String);
       if (sectionKey) recipientIds.push(sectionKey);
       const rows = await findMany(
         'notifications',

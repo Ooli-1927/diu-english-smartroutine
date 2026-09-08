@@ -168,7 +168,8 @@ export async function notify({
     const [batchPart, sectionPart] = String(recipientId || '').includes(':')
       ? String(recipientId).split(':')
       : [recipientId, null];
-    const batchStudents = await studentEmailsForBatch(batchPart, sectionPart || null);
+    const sectionNorm = sectionPart ? String(sectionPart).trim().toUpperCase() : null;
+    const batchStudents = await studentEmailsForBatch(batchPart, sectionNorm);
     if (batchStudents.length) {
       queueMails(
         batchStudents.map((s) => ({
@@ -232,7 +233,8 @@ export async function announce(entry, type, title, body) {
     .filter(Boolean)
     .join(' · ');
 
-  const section = entry.section || entry.group_name || null;
+  const sectionRaw = entry.section || entry.group_name || null;
+  const section = sectionRaw ? String(sectionRaw).trim().toUpperCase() : null;
   const studentRecipient = section ? `${entry.batch_id}:${section}` : entry.batch_id;
 
   await notify({

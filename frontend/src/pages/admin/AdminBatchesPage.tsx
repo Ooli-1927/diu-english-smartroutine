@@ -5,7 +5,7 @@ import { useData } from '../../context/DataContext';
 import { uid } from '../../lib/constants';
 import type { Batch } from '../../lib/types';
 import { sortRows, type SortDir } from '../../lib/sort';
-import { exportBatchRoutinePdf } from '../../lib/pdf';
+import { exportBatchRoutinePdf, sectionsForBatch } from '../../lib/pdf';
 import { PageHero } from '../../components/PageHero';
 import { SearchBox } from '../../components/SearchBox';
 import { SortControls, SortableHeaders, type SortColumn } from '../../components/TableSort';
@@ -30,13 +30,19 @@ export function AdminBatchesPage() {
   const counts = useMemo(() => {
     const students = new Map<string, number>();
     const classes = new Map<string, number>();
+    const sections = new Map<string, string[]>();
     for (const s of store?.students || []) {
       students.set(s.batch_id, (students.get(s.batch_id) || 0) + 1);
     }
     for (const e of store?.timetable || []) {
       classes.set(e.batch_id, (classes.get(e.batch_id) || 0) + 1);
     }
-    return { students, classes };
+    if (store) {
+      for (const b of store.batches) {
+        sections.set(b.id, sectionsForBatch(store, b.id));
+      }
+    }
+    return { students, classes, sections };
   }, [store]);
 
   const list = useMemo(() => {
@@ -66,6 +72,16 @@ export function AdminBatchesPage() {
     setForm({ id: b.id, name: b.name, session: b.session });
   }
 
+  async function downloadPdf(batchId: string, section?: string | null) {
+    if (!store) return;
+    try {
+      await exportBatchRoutinePdf(store, batchId, section);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PDF download failed');
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     const batch: Batch = {
@@ -89,7 +105,7 @@ export function AdminBatchesPage() {
         variant="admin"
         kicker="Catalog · Cohorts"
         title="Batches"
-        subtitle="Program cohorts and academic sessions for enrollment and scheduling."
+        subtitle="Download section-wise routine PDFs, or manage cohorts and sessions."
       />
       <form className="card pad row-3" onSubmit={onSubmit}>
         <input
@@ -145,6 +161,7 @@ export function AdminBatchesPage() {
                 onSort={sortBy}
               />
               <th>Classes</th>
+              <th>Section PDF</th>
               <th>ID</th>
               <th />
             </tr>
@@ -152,52 +169,69 @@ export function AdminBatchesPage() {
           <tbody>
             {list.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted center-cell">
+                <td colSpan={7} className="muted center-cell">
                   No batch matches this search.
                 </td>
               </tr>
             )}
-            {list.map((b) => (
-              <tr key={b.id}>
-                <td>{b.name}</td>
-                <td>{b.session}</td>
-                <td className="muted">{counts.students.get(b.id) || 0}</td>
-                <td className="muted">{counts.classes.get(b.id) || 0}</td>
-                <td className="muted">{b.id}</td>
-                <td className="row-gap">
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title={
-                      (counts.classes.get(b.id) || 0) > 0
-                        ? 'Download this batch routine as PDF'
-                        : 'No classes scheduled for this batch'
-                    }
-                    disabled={!store || !(counts.classes.get(b.id) || 0)}
-                    onClick={() => {
-                      if (!store) return;
-                      void exportBatchRoutinePdf(store, b.id).catch((err) => {
-                        setError(err instanceof Error ? err.message : 'PDF download failed');
-                      });
-                    }}
-                  >
-                    <Download size={16} />
-                  </button>
-                  <button className="icon-btn" onClick={() => startEdit(b)} title="Edit batch">
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    className="icon-btn danger"
-                    title="Delete batch"
-                    onClick={() => {
-                      if (window.confirm('Delete batch and related data?')) void deleteBatch(b.id);
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {list.map((b) => {
+              const secs = counts.sections.get(b.id) || [];
+              const hasClasses = (counts.classes.get(b.id) || 0) > 0;
+              return (
+                <tr key={b.id}>
+                  <td>{b.name}</td>
+                  <td>{b.session}</td>
+                  <td className="muted">{counts.students.get(b.id) || 0}</td>
+                  <td className="muted">{counts.classes.get(b.id) || 0}</td>
+                  <td>
+                    <div className="batch-section-pdfs">
+                      {secs.length === 0 ? (
+                        <button
+                          type="button"
+                          className="btn-outline compact"
+                          disabled={!store || !hasClasses}
+                          title={
+                            hasClasses
+                              ? 'Download full batch PDF (no sections in timetable)'
+                              : 'No classes scheduled'
+                          }
+                          onClick={() => void downloadPdf(b.id)}
+                        >
+                          <Download size={14} /> All
+                        </button>
+                      ) : (
+                        secs.map((sec) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            className="btn-outline compact"
+                            title={`Download ${b.name} Section ${sec} PDF`}
+                            onClick={() => void downloadPdf(b.id, sec)}
+                          >
+                            <Download size={14} /> Sec {sec}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </td>
+                  <td className="muted">{b.id}</td>
+                  <td className="row-gap">
+                    <button className="icon-btn" onClick={() => startEdit(b)} title="Edit batch">
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      className="icon-btn danger"
+                      title="Delete batch"
+                      onClick={() => {
+                        if (window.confirm('Delete batch and related data?')) void deleteBatch(b.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

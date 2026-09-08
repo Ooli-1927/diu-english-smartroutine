@@ -95,18 +95,53 @@ export async function authenticateCredentials(usernameOrEmail, password) {
   return null;
 }
 
-/** Attach profile photos for the client without putting large blobs into the JWT. */
+/** Attach live profile fields for the client without putting large blobs into the JWT. */
 export async function enrichSession(session) {
   if (!session) return null;
   const out = { ...session };
   if (session.role === 'student') {
-    const row = await findOne('students', { id: session.id }, { projection: { profile_pic: 1 } });
-    out.profilePic = row?.profile_pic || null;
+    const row = await findOne(
+      'students',
+      { id: session.id },
+      {
+        projection: {
+          profile_pic: 1,
+          section: 1,
+          batch_id: 1,
+          name: 1,
+          email: 1,
+          student_id: 1,
+        },
+      },
+    );
+    if (row) {
+      out.profilePic = row.profile_pic || null;
+      out.section = row.section || null;
+      out.batchId = row.batch_id || out.batchId || null;
+      out.name = row.name || out.name;
+      out.email = row.email ?? out.email ?? null;
+      out.studentId = row.student_id || out.studentId || null;
+    } else {
+      out.profilePic = null;
+    }
   } else if (session.role === 'teacher' || session.role === 'teacher_admin') {
     const row = session.teacherInitial
-      ? await findOne('teachers', { initial: session.teacherInitial }, { projection: { profile_pic: 1 } })
-      : await findOne('teachers', { id: session.id }, { projection: { profile_pic: 1 } });
+      ? await findOne(
+          'teachers',
+          { initial: session.teacherInitial },
+          { projection: { profile_pic: 1, name: 1, email: 1, initial: 1 } },
+        )
+      : await findOne(
+          'teachers',
+          { id: session.id },
+          { projection: { profile_pic: 1, name: 1, email: 1, initial: 1 } },
+        );
     out.profilePic = row?.profile_pic || null;
+    if (row) {
+      out.name = row.name || out.name;
+      out.email = row.email ?? out.email ?? null;
+      out.teacherInitial = row.initial || out.teacherInitial;
+    }
   } else if (session.role === 'super_admin') {
     const row = await findOne('admins', { id: session.id }, { projection: { profile_pic: 1 } });
     out.profilePic = row?.profile_pic || null;
@@ -145,6 +180,36 @@ export async function changeOwnPassword(session, currentPassword, newPassword) {
     throw Object.assign(new Error('New password must be at least 6 characters'), { status: 400 });
   }
 
+  const hashed = bcrypt.hashSync(newPassword, HASH_ROUNDS);
+
+  // teacher_admin logs in with admins.password_hash — keep that credential in sync.
+  if (session.role === 'teacher_admin') {
+    const admin = session.username
+      ? await findOne('admins', caseInsensitive('username', session.username))
+      : null;
+    if (!admin?.password_hash) {
+      throw Object.assign(new Error('Account not found'), { status: 404 });
+    }
+    if (!bcrypt.compareSync(currentPassword || '', admin.password_hash)) {
+      throw Object.assign(new Error('Current password is incorrect'), { status: 400 });
+    }
+    await updateOne('admins', { id: admin.id }, { $set: { password_hash: hashed } });
+    if (session.id) {
+      await updateOne(
+        'teachers',
+        { id: session.id },
+        {
+          $set: {
+            password_hash: hashed,
+            has_changed_password: true,
+            updated_at: nowIso(),
+          },
+        },
+      );
+    }
+    return true;
+  }
+
   const table =
     session.role === 'student'
       ? 'students'
@@ -165,7 +230,6 @@ export async function changeOwnPassword(session, currentPassword, newPassword) {
     throw Object.assign(new Error('Current password is incorrect'), { status: 400 });
   }
 
-  const hashed = bcrypt.hashSync(newPassword, HASH_ROUNDS);
   if (table === 'admins') {
     await updateOne('admins', { id: session.id }, { $set: { password_hash: hashed } });
   } else {

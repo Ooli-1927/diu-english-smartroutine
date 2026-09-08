@@ -31,7 +31,7 @@ function titleFor(ui: ReturnType<typeof usePushNotifications>['ui']): string {
 
 /** Bell toggle: enable/disable browser push (falls back to polling when off/unsupported). */
 export function PushNotificationToggle({ light }: Props) {
-  const { ui, enable, disable, busy } = usePushNotifications();
+  const { ui, enable, disable, busy, error } = usePushNotifications();
 
   if (ui === 'offline') return null;
 
@@ -43,13 +43,16 @@ export function PushNotificationToggle({ light }: Props) {
     <button
       type="button"
       className={`hero-icon-btn ${light ? 'light' : ''} ${enabled ? 'push-on' : ''}`}
-      title={titleFor(ui)}
-      aria-label={titleFor(ui)}
+      title={error ? error : titleFor(ui)}
+      aria-label={error ? error : titleFor(ui)}
       aria-pressed={enabled}
       disabled={disabled}
       onClick={() => {
         if (enabled) void disable();
-        else void enable().catch(() => undefined);
+        else
+          void enable().catch((e) => {
+            window.alert(e instanceof Error ? e.message : 'Could not enable notifications');
+          });
       }}
     >
       {enabled ? <BellRing size={18} /> : <BellOff size={18} />}

@@ -165,27 +165,6 @@ export function AdminTimetablePage() {
     }
   };
 
-  const onClearEntireTimetable = async () => {
-    const allIds = (store?.timetable || []).map((e) => e.id);
-    if (!allIds.length || bulkBusy) return;
-    const ok = window.confirm(
-      `Clear the ENTIRE timetable (${allIds.length} classes)?\n\nUse this before manually building a new semester. This cannot be undone.`,
-    );
-    if (!ok) return;
-    setBulkBusy(true);
-    setError('');
-    setMsg('');
-    try {
-      const deleted = await deleteTimetableEntries(allIds);
-      setSelected(new Set());
-      setMsg(`Cleared ${deleted} classes. Timetable is empty — add new classes with Add.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not clear timetable');
-    } finally {
-      setBulkBusy(false);
-    }
-  };
-
   const grouped = useMemo(() => {
     const map = new Map<DayCode, typeof entries>();
     for (const e of entries) {
@@ -495,15 +474,6 @@ export function AdminTimetablePage() {
                   }}
                 />
               </label>
-              <button
-                type="button"
-                className="btn-outline danger"
-                disabled={bulkBusy || totalClasses === 0}
-                onClick={() => void onClearEntireTimetable()}
-                title="Remove every class (new semester reset)"
-              >
-                <Trash2 size={16} /> Clear all
-              </button>
               <button
                 type="button"
                 className="btn-primary"

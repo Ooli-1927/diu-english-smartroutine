@@ -123,13 +123,12 @@ export function AdminLayout() {
           </button>
           <div className="admin-mobile-bar__brand">
             <BrandMark
-              variant="topbar"
-              title="Chairman Console"
-              subtitle={session?.username || 'Super Admin'}
+              variant="compact"
+              title="Chairman"
+              className="admin-mobile-brand"
             />
           </div>
           <div className="admin-mobile-bar__tools">
-            <ThemeToggle />
             <PortalAlerts noticesTo="/admin/notices" />
             <UserAvatar
               src={session?.profilePic}

@@ -8530,12 +8530,12 @@ select.input:focus {
   .admin-mobile-bar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     position: sticky;
     top: 0;
     z-index: 45;
-    padding: 10px 12px;
-    padding-top: max(10px, env(safe-area-inset-top));
+    padding: 8px 10px;
+    padding-top: max(8px, env(safe-area-inset-top));
     background:
       linear-gradient(180deg, #0c3a5c 0%, #0a2540 100%);
     border-bottom: 1px solid color-mix(in srgb, var(--diu-sky) 22%, transparent);
@@ -8545,24 +8545,69 @@ select.input:focus {
   .admin-mobile-bar__brand {
     flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
+  }
+
+  .admin-mobile-bar__brand .admin-mobile-brand,
+  .admin-mobile-bar__brand .brand-mark {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .admin-mobile-bar__brand .brand-mark__crests {
+    flex: 0 0 auto;
+  }
+
+  .admin-mobile-bar__brand .brand-mark__eng {
+    width: 34px;
+    height: 34px;
+  }
+
+  .admin-mobile-bar__brand .brand-mark__copy {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .admin-mobile-bar__brand .brand-mark__kicker {
+    display: none;
   }
 
   .admin-mobile-bar__brand .brand-mark__sub {
     display: none;
   }
 
+  .admin-mobile-bar__brand .brand-mark__title {
+    display: block;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+  }
+
   .admin-mobile-bar__tools {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex: 0 0 auto;
+  }
+
+  .admin-mobile-bar__tools .portal-alerts {
+    gap: 4px;
+  }
+
+  .admin-mobile-bar__tools .theme-toggle {
+    display: none;
   }
 
   .admin-menu-btn {
     display: inline-grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     border: 1px solid color-mix(in srgb, #fff 22%, transparent);
     border-radius: 14px;
     background: color-mix(in srgb, #fff 10%, transparent);
@@ -8638,7 +8683,15 @@ select.input:focus {
   }
 
   .admin-sidebar__tools {
-    display: none;
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .admin-sidebar__tools .theme-toggle {
+    flex: 1 1 auto;
   }
 
   .admin-sidebar nav {

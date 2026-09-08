@@ -8684,7 +8684,7 @@ select.input:focus {
 
   .admin-sidebar__tools {
     display: flex !important;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -8692,6 +8692,13 @@ select.input:focus {
 
   .admin-sidebar__tools .theme-toggle {
     flex: 1 1 auto;
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 44px;
+  }
+
+  .admin-sidebar__tools .portal-alerts {
+    display: none;
   }
 
   .admin-sidebar nav {

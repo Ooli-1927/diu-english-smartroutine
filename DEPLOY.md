@@ -28,12 +28,16 @@ API + database লাগে — **GitHub Pages** বা **Render Static Site** �
 
 ### Manual Web Service settings
 
+**Preferred (repo root):**
+
 | Field | Value |
 | --- | --- |
-| Root Directory | খালি (repo root) |
+| Root Directory | খালি (repo root) — **`backend` লিখবেন না** |
 | Build Command | `bash ./scripts/render-build.sh` |
 | Start Command | `npm --prefix backend start` |
 | Health Check Path | `/api/health` |
+
+**If Root Directory is already `backend`:** use Build `npm install; npm run build` and Start `npm start` (backend `build` script compiles the sibling `frontend/`).
 
 Env vars:
 

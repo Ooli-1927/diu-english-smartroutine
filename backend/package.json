@@ -5,11 +5,12 @@
   "type": "module",
   "description": "SmartRoutine backend — Express + MongoDB REST API",
   "engines": {
-    "node": ">=22.5.0"
+    "node": "22.14.0"
   },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch --watch-path=./src src/index.js",
+    "build": "node ./scripts/build-for-render.mjs",
     "seed": "node src/seed.js",
     "reset": "node src/seed.js --force"
   },

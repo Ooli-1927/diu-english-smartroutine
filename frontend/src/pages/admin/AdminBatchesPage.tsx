@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Download, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { uid } from '../../lib/constants';
 import type { Batch } from '../../lib/types';
 import { sortRows, type SortDir } from '../../lib/sort';
+import { exportBatchRoutinePdf } from '../../lib/pdf';
 import { PageHero } from '../../components/PageHero';
 import { SearchBox } from '../../components/SearchBox';
 import { SortControls, SortableHeaders, type SortColumn } from '../../components/TableSort';
@@ -164,11 +165,30 @@ export function AdminBatchesPage() {
                 <td className="muted">{counts.classes.get(b.id) || 0}</td>
                 <td className="muted">{b.id}</td>
                 <td className="row-gap">
-                  <button className="icon-btn" onClick={() => startEdit(b)}>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title={
+                      (counts.classes.get(b.id) || 0) > 0
+                        ? 'Download this batch routine as PDF'
+                        : 'No classes scheduled for this batch'
+                    }
+                    disabled={!store || !(counts.classes.get(b.id) || 0)}
+                    onClick={() => {
+                      if (!store) return;
+                      void exportBatchRoutinePdf(store, b.id).catch((err) => {
+                        setError(err instanceof Error ? err.message : 'PDF download failed');
+                      });
+                    }}
+                  >
+                    <Download size={16} />
+                  </button>
+                  <button className="icon-btn" onClick={() => startEdit(b)} title="Edit batch">
                     <Pencil size={16} />
                   </button>
                   <button
                     className="icon-btn danger"
+                    title="Delete batch"
                     onClick={() => {
                       if (window.confirm('Delete batch and related data?')) void deleteBatch(b.id);
                     }}

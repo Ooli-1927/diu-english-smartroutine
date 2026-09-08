@@ -10,6 +10,7 @@ import { useData } from '../../context/DataContext';
 import { ScheduleCard } from '../../components/ScheduleCard';
 import { UserAvatar } from '../../components/ProfileAvatar';
 import { CalendarExportButton } from '../../components/CalendarExportButton';
+import { RoutinePdfButton } from '../../components/RoutinePdfButton';
 import { BrandMark } from '../../components/BrandMark';
 import { PortalAlerts } from '../../components/PortalAlerts';
 import { CLASS_MODES, CLASS_TYPES, DAYS, formatTime, todayDay } from '../../lib/constants';
@@ -246,11 +247,19 @@ export function TeacherPortalPage() {
           </h3>
         </div>
         {initial ? (
-          <CalendarExportButton
-            audience="teacher"
-            entries={weekEntries}
-            fileLabel={initial}
-          />
+          <div className="schedule-export-row">
+            <RoutinePdfButton
+              kind="teacher"
+              teacherInitial={initial}
+              teacherName={session?.name || null}
+              label="Download PDF"
+            />
+            <CalendarExportButton
+              audience="teacher"
+              entries={weekEntries}
+              fileLabel={initial}
+            />
+          </div>
         ) : null}
         {problems.length > 0 && !modal && (
           <div className="warn-banner">

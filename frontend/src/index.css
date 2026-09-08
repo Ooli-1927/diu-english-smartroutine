@@ -2529,6 +2529,35 @@ textarea.input {
   gap: 0.35rem;
 }
 
+.schedule-export-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.page .schedule-export-row {
+  margin: 0 1rem 1rem;
+}
+
+.schedule-export-row .calendar-export,
+.schedule-export-row .routine-pdf-btn {
+  margin: 0;
+}
+
+.routine-pdf-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.routine-pdf-btn .error-inline {
+  margin: 0;
+  color: var(--danger, #c62828);
+}
+
 .calendar-export__hint {
   margin: 0;
   max-width: 36rem;

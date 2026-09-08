@@ -5,6 +5,7 @@ import { useData } from '../../context/DataContext';
 import { PageHero } from '../../components/PageHero';
 import { ScheduleCard } from '../../components/ScheduleCard';
 import { CalendarExportButton } from '../../components/CalendarExportButton';
+import { RoutinePdfButton } from '../../components/RoutinePdfButton';
 import { DAYS, todayDay } from '../../lib/constants';
 import type { DayCode } from '../../lib/types';
 
@@ -53,12 +54,22 @@ export function StudentSchedulePage() {
       />
 
       {batchId ? (
-        <CalendarExportButton
-          light
-          audience="student"
-          entries={weekEntries}
-          fileLabel={batch?.name || batchId}
-        />
+        <div className="schedule-export-row">
+          <RoutinePdfButton
+            kind="student"
+            batchId={batchId}
+            section={section}
+            studentLabel={session?.name || null}
+            light
+            label="Download PDF"
+          />
+          <CalendarExportButton
+            light
+            audience="student"
+            entries={weekEntries}
+            fileLabel={batch?.name || batchId}
+          />
+        </div>
       ) : null}
 
       <div className="day-pills dark">

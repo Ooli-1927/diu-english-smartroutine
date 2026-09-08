@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Download, FileUp, Plus, Trash2, X } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { CLASS_MODES, CLASS_TYPES, DAYS } from '../../lib/constants';
-import { exportTimetablePdf } from '../../lib/pdf';
+import { exportBatchRoutinePdf, exportTimetablePdf } from '../../lib/pdf';
 import { parseRoutineFile, resolveRoutineImport } from '../../lib/routineImport';
 import {
   conflictLabel,
@@ -376,6 +376,13 @@ export function AdminTimetablePage() {
     });
   }
 
+  function exportBatchPdf() {
+    if (!store || batchFilter === 'all') return;
+    void exportBatchRoutinePdf(store, batchFilter).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Batch PDF export failed');
+    });
+  }
+
   async function onImportFile(file: File) {
     if (!store) return;
     setError('');
@@ -466,10 +473,20 @@ export function AdminTimetablePage() {
                 type="button"
                 className="btn-outline"
                 onClick={exportPdf}
-                title="Download full routine as PDF"
+                title="Download full department routine as PDF"
               >
-                <Download size={16} /> PDF
+                <Download size={16} /> Full PDF
               </button>
+              {batchFilter !== 'all' ? (
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={exportBatchPdf}
+                  title="Download the filtered batch routine as PDF"
+                >
+                  <Download size={16} /> Batch PDF
+                </button>
+              ) : null}
               <label
                 className={`btn-outline file-btn${importing ? ' disabled' : ''}`}
                 title="Upload semester PDF / JSON / CSV — updates whole site"

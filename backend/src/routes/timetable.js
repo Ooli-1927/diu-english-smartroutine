@@ -462,6 +462,20 @@ timetableRouter.delete('/timetable/:id', adminOnly, async (req, res, next) => {
   }
 });
 
+/** Bulk remove classes (no per-class email storm — for semester reset). */
+timetableRouter.post('/timetable/bulk-delete', adminOnly, async (req, res, next) => {
+  try {
+    const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const ids = [...new Set(rawIds.map((id) => String(id || '').trim()).filter(Boolean))];
+    if (!ids.length) return res.status(400).json({ error: 'ids[] is required' });
+
+    const result = await deleteMany('timetable_entries', { id: { $in: ids } });
+    res.json({ ok: true, deleted: result.deletedCount || 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
 timetableRouter.post('/timetable/import', adminOnly, async (req, res, next) => {
   try {
     const { entries, replace = false } = req.body || {};

@@ -38,6 +38,7 @@ export function AdminTimetablePage() {
     store,
     addTimetableEntry,
     deleteTimetableEntry,
+    deleteTimetableEntries,
     importTimetable,
     seedImportEntities,
     courseByCode,
@@ -55,6 +56,8 @@ export function AdminTimetablePage() {
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
   const [importing, setImporting] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [blocked, setBlocked] = useState<string[]>([]);
   const [headerCompact, setHeaderCompact] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -102,6 +105,86 @@ export function AdminTimetablePage() {
         : DAYS.indexOf(a.day) - DAYS.indexOf(b.day),
     );
   }, [store, day, batchFilter, q, courseByCode, teacherByInitial, batchById, roomById]);
+
+  useEffect(() => {
+    setSelected((prev) => {
+      const visible = new Set(entries.map((e) => e.id));
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [entries]);
+
+  const allVisibleSelected =
+    entries.length > 0 && entries.every((e) => selected.has(e.id));
+  const someVisibleSelected = entries.some((e) => selected.has(e.id));
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      if (entries.length === 0) return prev;
+      if (entries.every((e) => prev.has(e.id))) {
+        const next = new Set(prev);
+        for (const e of entries) next.delete(e.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const e of entries) next.add(e.id);
+      return next;
+    });
+  };
+
+  const onBulkDelete = async () => {
+    const ids = [...selected];
+    if (!ids.length || bulkBusy) return;
+    const ok = window.confirm(
+      `Delete ${ids.length} selected class${ids.length === 1 ? '' : 'es'}?\n\nThis cannot be undone. Students will not get individual remove emails for bulk delete.`,
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    setError('');
+    setMsg('');
+    try {
+      const deleted = await deleteTimetableEntries(ids);
+      setSelected(new Set());
+      setMsg(`Deleted ${deleted} class${deleted === 1 ? '' : 'es'}. You can add the new semester routine now.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk delete failed');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const onClearEntireTimetable = async () => {
+    const allIds = (store?.timetable || []).map((e) => e.id);
+    if (!allIds.length || bulkBusy) return;
+    const ok = window.confirm(
+      `Clear the ENTIRE timetable (${allIds.length} classes)?\n\nUse this before manually building a new semester. This cannot be undone.`,
+    );
+    if (!ok) return;
+    setBulkBusy(true);
+    setError('');
+    setMsg('');
+    try {
+      const deleted = await deleteTimetableEntries(allIds);
+      setSelected(new Set());
+      setMsg(`Cleared ${deleted} classes. Timetable is empty — add new classes with Add.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not clear timetable');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const grouped = useMemo(() => {
     const map = new Map<DayCode, typeof entries>();
@@ -414,6 +497,15 @@ export function AdminTimetablePage() {
               </label>
               <button
                 type="button"
+                className="btn-outline danger"
+                disabled={bulkBusy || totalClasses === 0}
+                onClick={() => void onClearEntireTimetable()}
+                title="Remove every class (new semester reset)"
+              >
+                <Trash2 size={16} /> Clear all
+              </button>
+              <button
+                type="button"
                 className="btn-primary"
                 onClick={toggleAddForm}
                 aria-expanded={showForm}
@@ -651,6 +743,41 @@ export function AdminTimetablePage() {
         </div>
       ) : null}
 
+      {entries.length > 0 && (
+        <div className="tt-select-bar card pad">
+          <label className="tt-select-all">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+              }}
+              onChange={toggleSelectAllVisible}
+            />
+            <span>
+              Select all shown ({entries.length}
+              {filtersActive ? ' filtered' : ''})
+            </span>
+          </label>
+          <div className="tt-select-bar__actions">
+            {selected.size > 0 && (
+              <span className="muted small">
+                {selected.size} selected
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn-outline danger sm"
+              disabled={selected.size === 0 || bulkBusy}
+              onClick={() => void onBulkDelete()}
+            >
+              <Trash2 size={14} />
+              {bulkBusy ? 'Deleting…' : `Delete selected${selected.size ? ` (${selected.size})` : ''}`}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="page-content tt-list">
         {entries.length === 0 ? (
           <div className="empty-state tt-empty">
@@ -674,24 +801,42 @@ export function AdminTimetablePage() {
                 <div
                   key={e.id}
                   id={`entry-${e.id}`}
-                  className={focusId === e.id ? 'focus-ring' : undefined}
+                  className={`tt-entry-row${focusId === e.id ? ' focus-ring' : ''}${
+                    selected.has(e.id) ? ' is-selected' : ''
+                  }`}
                 >
-                  <ScheduleCard
-                    entry={e}
-                    warning={clashNote.get(e.id)}
-                    actions={
-                      <button
-                        className="btn-outline danger sm"
-                        onClick={() => {
-                          if (window.confirm('Delete this class?')) {
-                            void deleteTimetableEntry(e.id);
-                          }
-                        }}
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
-                    }
-                  />
+                  <label className="tt-entry-check">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(e.id)}
+                      onChange={() => toggleSelect(e.id)}
+                      aria-label={`Select ${e.course_code} on ${e.day}`}
+                    />
+                  </label>
+                  <div className="tt-entry-card">
+                    <ScheduleCard
+                      entry={e}
+                      warning={clashNote.get(e.id)}
+                      actions={
+                        <button
+                          className="btn-outline danger sm"
+                          onClick={() => {
+                            if (window.confirm('Delete this class?')) {
+                              void deleteTimetableEntry(e.id);
+                              setSelected((prev) => {
+                                if (!prev.has(e.id)) return prev;
+                                const next = new Set(prev);
+                                next.delete(e.id);
+                                return next;
+                              });
+                            }
+                          }}
+                        >
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      }
+                    />
+                  </div>
                 </div>
               ))}
             </section>

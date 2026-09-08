@@ -1719,6 +1719,83 @@ button.chip.active {
   margin-top: 12px;
 }
 
+.tt-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tt-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tt-select-all input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.tt-select-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tt-entry-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+
+.tt-entry-row.is-selected .schedule-card {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--divider));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.tt-entry-check {
+  display: grid;
+  place-items: center;
+  padding-top: 18px;
+  cursor: pointer;
+}
+
+.tt-entry-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.tt-entry-card {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .tt-select-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tt-select-bar__actions {
+    width: 100%;
+  }
+
+  .tt-select-bar__actions .btn-outline {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .teacher-mini-card {
   display: flex;
   gap: 12px;

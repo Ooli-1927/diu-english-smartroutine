@@ -203,6 +203,11 @@ export const api = {
   patchEntry: (id: string, body: Partial<TimetableEntry> & { force?: boolean }) =>
     request<TimetableEntry>(`/timetable/${id}`, { method: 'PATCH', body }),
   deleteEntry: (id: string) => request<{ ok: true }>(`/timetable/${id}`, { method: 'DELETE' }),
+  bulkDeleteEntries: (ids: string[]) =>
+    request<{ ok: true; deleted: number }>('/timetable/bulk-delete', {
+      method: 'POST',
+      body: { ids },
+    }),
   importEntries: (entries: Omit<TimetableEntry, 'id'>[], replace: boolean) =>
     request<{ imported: number; rejected: Array<{ row: number; errors: string[] }> }>(
       '/timetable/import',

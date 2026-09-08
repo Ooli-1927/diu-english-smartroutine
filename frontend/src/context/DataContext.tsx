@@ -57,6 +57,7 @@ interface DataContextValue {
     opts?: { force?: boolean },
   ) => Promise<void>;
   deleteTimetableEntry: (id: string) => Promise<void>;
+  deleteTimetableEntries: (ids: string[]) => Promise<number>;
   upsertBatch: (batch: Batch, isNew?: boolean) => Promise<void>;
   deleteBatch: (id: string) => Promise<void>;
   upsertStudent: (student: Student, isNew?: boolean) => Promise<void>;
@@ -264,6 +265,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (vault?.source === 'supabase' && supabase) {
         await supabase.from('timetable_entries').delete().eq('id', id);
       }
+    },
+    [store, commitApi, commitOffline, isApi],
+  );
+
+  const deleteTimetableEntries = useCallback(
+    async (ids: string[]) => {
+      if (!store || !ids.length) return 0;
+      const unique = [...new Set(ids.filter(Boolean))];
+      if (!unique.length) return 0;
+      if (isApi) {
+        const result = await api.bulkDeleteEntries(unique);
+        const removed = new Set(unique);
+        commitApi({
+          ...store,
+          timetable: store.timetable.filter((e) => !removed.has(e.id)),
+        });
+        return result.deleted ?? unique.length;
+      }
+      const removed = new Set(unique);
+      commitOffline((v) => ({
+        ...v,
+        timetable: v.timetable.filter((e) => !removed.has(e.id)),
+      }));
+      const vault = getStoreVault();
+      if (vault?.source === 'supabase' && supabase) {
+        await supabase.from('timetable_entries').delete().in('id', unique);
+      }
+      return unique.length;
     },
     [store, commitApi, commitOffline, isApi],
   );
@@ -689,6 +718,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateTimetableEntry,
       addTimetableEntry,
       deleteTimetableEntry,
+      deleteTimetableEntries,
       upsertBatch,
       deleteBatch,
       upsertStudent,
@@ -719,6 +749,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateTimetableEntry,
       addTimetableEntry,
       deleteTimetableEntry,
+      deleteTimetableEntries,
       upsertBatch,
       deleteBatch,
       upsertStudent,

@@ -4055,9 +4055,24 @@ th.sorted {
 }
 
 @media (max-width: 960px) {
+  /* Never pin PDF/Import/Add over the timetable list on phones */
+  .tt-hero-wrap,
   .tt-hero-wrap[style] {
-    left: 12px !important;
-    width: calc(100vw - 24px) !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
+    margin: 0 0 12px !important;
+  }
+
+  .tt-sticky-spacer {
+    display: none !important;
+    height: 0 !important;
+  }
+
+  .admin-page--timetable.is-header-docked .tt-hero-wrap {
+    position: relative !important;
   }
 }
 

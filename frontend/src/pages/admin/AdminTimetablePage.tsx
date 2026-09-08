@@ -219,10 +219,21 @@ export function AdminTimetablePage() {
     const sentinel = stickySentinelRef.current;
     if (!sentinel) return;
 
+    const mobileDockOff = () => window.matchMedia('(max-width: 960px)').matches;
+
     const syncDock = () => {
       const wrap = heroWrapRef.current;
       const page = wrap?.closest('.admin-page') as HTMLElement | null;
       if (!wrap || !page) return;
+
+      // On phones the docked PDF/Import/Add bar covers the list — keep hero in normal flow.
+      if (mobileDockOff()) {
+        setHeaderCompact(false);
+        setDockStyle(undefined);
+        setSpacerH(0);
+        return;
+      }
+
       const past = sentinel.getBoundingClientRect().top < 8;
       setHeaderCompact(past);
       if (!past) {
@@ -247,7 +258,7 @@ export function AdminTimetablePage() {
       const hero = wrap?.querySelector('.page-hero') as HTMLElement | null;
       if (!wrap || !page || !hero) return;
 
-      if (!headerCompact) {
+      if (!headerCompact || window.matchMedia('(max-width: 960px)').matches) {
         setDockStyle(undefined);
         setSpacerH(0);
         return;

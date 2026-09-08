@@ -371,7 +371,9 @@ export function AdminTimetablePage() {
 
   function exportPdf() {
     if (!store) return;
-    exportTimetablePdf(store, store.timetable, 'DIU English Timetable');
+    void exportTimetablePdf(store, store.timetable, 'DIU English Timetable').catch((err) => {
+      setError(err instanceof Error ? err.message : 'PDF export failed');
+    });
   }
 
   async function onImportFile(file: File) {

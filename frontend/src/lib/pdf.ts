@@ -17,30 +17,27 @@ const DAY_FULL: Record<DayCode, string> = {
   Fri: 'Friday',
 };
 
-const MAX_SLOTS = 4;
-
-/** DIU English print palette — navy + soft teal (print-safe). */
+/** Official DIU print palette */
 const C = {
   navy: [10, 37, 64] as [number, number, number],
-  navyMid: [18, 55, 95] as [number, number, number],
-  teal: [14, 110, 110] as [number, number, number],
-  ink: [22, 32, 40] as [number, number, number],
-  muted: [90, 105, 118] as [number, number, number],
-  line: [190, 204, 218] as [number, number, number],
-  head: [232, 238, 246] as [number, number, number],
-  band: [245, 248, 252] as [number, number, number],
+  navyDeep: [6, 28, 48] as [number, number, number],
+  blue: [0, 112, 176] as [number, number, number],
+  green: [57, 181, 74] as [number, number, number],
+  ink: [24, 32, 40] as [number, number, number],
+  muted: [88, 102, 116] as [number, number, number],
+  line: [198, 210, 222] as [number, number, number],
+  headSoft: [236, 242, 248] as [number, number, number],
+  rowAlt: [248, 251, 253] as [number, number, number],
   white: [255, 255, 255] as [number, number, number],
-  softTeal: [232, 244, 243] as [number, number, number],
-  dayFill: [10, 37, 64] as [number, number, number],
-  slotAlt: [248, 250, 253] as [number, number, number],
+  band: [242, 247, 251] as [number, number, number],
 };
 
-/** Serializable rows that round-trip cleanly through PDF import. */
 export type RoutinePdfRow = {
   day: DayCode;
   batch_id: string;
   batch_name?: string;
   teacher_initial: string;
+  teacher_name?: string;
   course_code: string;
   course_title?: string;
   type: ClassType;
@@ -49,6 +46,7 @@ export type RoutinePdfRow = {
   end_time: string;
   room_id: string | null;
   room_name?: string | null;
+  section: string | null;
   group_name: string | null;
   is_cancelled: boolean;
   cancellation_reason: string | null;
@@ -59,11 +57,13 @@ export function toPdfRows(store: StoreState, entries: TimetableEntry[]): Routine
     const course = store.courses.find((c) => c.code === e.course_code);
     const batch = store.batches.find((b) => b.id === e.batch_id);
     const room = store.rooms.find((r) => r.id === e.room_id || r.name === e.room_id);
+    const teacher = store.teachers.find((t) => t.initial === e.teacher_initial);
     return {
       day: e.day,
       batch_id: e.batch_id,
       batch_name: batch?.name,
       teacher_initial: e.teacher_initial,
+      teacher_name: teacher?.name,
       course_code: e.course_code,
       course_title: course?.title,
       type: e.type,
@@ -72,6 +72,7 @@ export function toPdfRows(store: StoreState, entries: TimetableEntry[]): Routine
       end_time: formatTime(e.end_time),
       room_id: e.room_id,
       room_name: e.mode === 'Online' ? 'Online' : room?.name || e.room_id,
+      section: e.section || null,
       group_name: e.group_name,
       is_cancelled: e.is_cancelled,
       cancellation_reason: e.cancellation_reason,
@@ -87,39 +88,37 @@ function toAmPm(t: string): string {
   return `${h12}:${String(ms || 0).padStart(2, '0')} ${ap}`;
 }
 
+function timeRange(start: string, end: string): string {
+  return `${toAmPm(start)} – ${toAmPm(end)}`;
+}
+
 function sessionLabel(session: string): string {
   const m = session.match(/^(\d{4})-(\d{2})$/);
   if (m) return `${m[1]}-20${m[2]}`;
   return session;
 }
 
-function typeShort(type: ClassType, mode: ClassMode): string {
-  if (mode === 'Online') return 'Online';
-  if (type === 'Tutorial') return 'Tutorial';
-  if (type === 'Sessional') return 'Lab / Sessional';
+function roomLabel(row: RoutinePdfRow): string {
+  if (row.mode === 'Online') return 'Online';
+  const raw = row.room_name || row.room_id || '—';
+  const digits = String(raw).match(/\d{3,4}[A-Za-z]?/);
+  return digits ? digits[0] : String(raw).replace(/\s*\([^)]*\)\s*/g, '').trim() || '—';
+}
+
+function sectionLabel(row: RoutinePdfRow): string {
+  return (row.section || row.group_name || '—').toString().toUpperCase();
+}
+
+function classKind(row: RoutinePdfRow): string {
+  if (row.mode === 'Online') return 'Online';
+  if (row.type === 'Sessional') return 'Lab';
+  if (row.type === 'Tutorial') return 'Tutorial';
   return 'Lecture';
 }
 
-function roomShort(name: string | null | undefined, id: string | null): string {
-  if (!name && !id) return '';
-  const raw = name || id || '';
-  if (/online/i.test(raw)) return 'Online';
-  const digits = raw.match(/\d{3,4}/);
-  return digits ? `R-${digits[0]}` : raw.replace(/\s*\([^)]*\)\s*/g, '').trim();
-}
-
-/** Readable multi-line cell — time first, then course, then meta. */
-function cellText(e: RoutinePdfRow): string {
-  const time = `${toAmPm(e.start_time)} – ${toAmPm(e.end_time)}`;
-  const room = e.mode === 'Online' ? 'Online' : roomShort(e.room_name, e.room_id);
-  const meta = [
-    e.teacher_initial,
-    room || null,
-    e.group_name ? `Grp ${e.group_name}` : null,
-  ]
-    .filter(Boolean)
-    .join('  ·  ');
-  return `${time}\n${e.course_code}\n${meta}\n${typeShort(e.type, e.mode)}`;
+function teacherLabel(row: RoutinePdfRow): string {
+  if (row.teacher_name) return `${row.teacher_initial} — ${row.teacher_name}`;
+  return row.teacher_initial || '—';
 }
 
 function sortedBatches(store: StoreState) {
@@ -135,31 +134,7 @@ function uniqueSessions(store: StoreState): string {
   const parts = sortedBatches(store)
     .filter((b) => b.session && b.session !== 'MSC')
     .map((b) => sessionLabel(b.session));
-  return [...new Set(parts)].join('  ·  ');
-}
-
-function batchColumnLabel(batch: { name: string; session: string }): string {
-  const sess = sessionLabel(batch.session);
-  if (!sess || sess === batch.name) return batch.name;
-  return `${batch.name}\n${sess}`;
-}
-
-function packSlots(classes: RoutinePdfRow[]): string[] {
-  const slots: string[] = Array.from({ length: MAX_SLOTS }, () => '');
-  const byStart = new Map<string, RoutinePdfRow[]>();
-  for (const c of classes) {
-    const key = `${c.start_time}|${c.end_time}`;
-    const list = byStart.get(key) || [];
-    list.push(c);
-    byStart.set(key, list);
-  }
-  [...byStart.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(0, MAX_SLOTS)
-    .forEach(([_, list], idx) => {
-      slots[idx] = list.map(cellText).join('\n────────\n');
-    });
-  return slots;
+  return [...new Set(parts)].join(' · ');
 }
 
 function lastTableY(doc: jsPDF, fallback: number) {
@@ -168,338 +143,372 @@ function lastTableY(doc: jsPDF, fallback: number) {
   );
 }
 
-function drawBrandMark(doc: jsPDF, x: number, y: number, size = 14) {
-  doc.setFillColor(...C.navy);
-  doc.roundedRect(x, y, size, size, 2.2, 2.2, 'F');
-  doc.setFillColor(...C.teal);
-  doc.roundedRect(x + size * 0.38, y + size * 0.38, size * 0.5, size * 0.5, 1.4, 1.4, 'F');
-  doc.setTextColor(...C.white);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5.5);
-  doc.text('ENG', x + size / 2, y + size / 2 + 1.6, { align: 'center' });
+function sortRows(rows: RoutinePdfRow[]): RoutinePdfRow[] {
+  return [...rows].sort((a, b) => {
+    const d = DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
+    if (d) return d;
+    const t = a.start_time.localeCompare(b.start_time);
+    if (t) return t;
+    const bcmp = (a.batch_name || a.batch_id).localeCompare(b.batch_name || b.batch_id);
+    if (bcmp) return bcmp;
+    return sectionLabel(a).localeCompare(sectionLabel(b));
+  });
 }
 
-function drawPageChrome(
+async function loadImageDataUrl(path: string): Promise<string | null> {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('read failed'));
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function drawHeader(
   doc: jsPDF,
+  logos: { uni: string | null; eng: string | null },
   opts: {
-    title: string;
-    subtitle?: string;
-    meta?: string;
+    documentTitle: string;
+    sessionLine?: string;
+    generated: string;
     compact?: boolean;
   },
 ) {
   const pageW = doc.internal.pageSize.getWidth();
+  const headerH = opts.compact ? 26 : 36;
 
-  doc.setFillColor(...C.navy);
-  doc.rect(0, 0, pageW, opts.compact ? 18 : 28, 'F');
-  doc.setFillColor(...C.teal);
-  doc.rect(0, opts.compact ? 18 : 28, pageW, 1.4, 'F');
+  doc.setFillColor(...C.navyDeep);
+  doc.rect(0, 0, pageW, headerH, 'F');
+  doc.setFillColor(...C.green);
+  doc.rect(0, headerH, pageW, 1.6, 'F');
+  doc.setFillColor(...C.blue);
+  doc.rect(0, headerH + 1.6, pageW, 0.7, 'F');
 
-  drawBrandMark(doc, 12, opts.compact ? 2.2 : 6, opts.compact ? 13 : 16);
+  const logoY = opts.compact ? 4 : 6;
+  const logoSize = opts.compact ? 16 : 22;
+  if (logos.uni) {
+    try {
+      doc.addImage(logos.uni, 'PNG', 10, logoY, logoSize, logoSize);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (logos.eng) {
+    try {
+      doc.addImage(logos.eng, 'PNG', pageW - 10 - logoSize, logoY, logoSize, logoSize);
+    } catch {
+      /* ignore */
+    }
+  }
 
   doc.setTextColor(...C.white);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(opts.compact ? 11 : 13);
-  doc.text('Daffodil International University', 30, opts.compact ? 8.2 : 12);
+  doc.text('DAFFODIL INTERNATIONAL UNIVERSITY', pageW / 2, opts.compact ? 9 : 11, {
+    align: 'center',
+  });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(opts.compact ? 7.5 : 8.5);
-  doc.setTextColor(210, 222, 235);
+  doc.setTextColor(200, 218, 235);
   doc.text(
     'Faculty of Humanities & Social Sciences  ·  Department of English',
-    30,
-    opts.compact ? 13.5 : 18.5,
+    pageW / 2,
+    opts.compact ? 14.5 : 17.5,
+    { align: 'center' },
   );
 
   if (!opts.compact) {
-    doc.setFillColor(...C.band);
-    doc.rect(0, 29.4, pageW, 16, 'F');
-    doc.setTextColor(...C.navy);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(opts.title, 12, 39);
+    doc.setFontSize(11);
+    doc.setTextColor(...C.white);
+    doc.text(opts.documentTitle, pageW / 2, 27, { align: 'center' });
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(...C.muted);
-    const right = [opts.subtitle, opts.meta].filter(Boolean).join('   |   ');
-    if (right) doc.text(right, pageW - 12, 39, { align: 'right' });
-    doc.setDrawColor(...C.line);
-    doc.setLineWidth(0.3);
-    doc.line(12, 44.2, pageW - 12, 44.2);
-    return 48;
+    doc.setFontSize(7.5);
+    doc.setTextColor(180, 205, 225);
+    const sub = [opts.sessionLine, `Generated ${opts.generated}`].filter(Boolean).join('   ·   ');
+    doc.text(sub, pageW / 2, 32.5, { align: 'center' });
+    return headerH + 8;
   }
 
-  doc.setTextColor(...C.navy);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text(opts.title, 12, 28);
-  if (opts.subtitle) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(...C.muted);
-    doc.text(opts.subtitle, 12, 33);
-  }
-  return 36;
+  doc.setFontSize(9);
+  doc.setTextColor(...C.white);
+  doc.text(opts.documentTitle, pageW / 2, 21.5, { align: 'center' });
+  return headerH + 6;
 }
 
-function drawLegend(doc: jsPDF, x: number, y: number) {
+function drawFooter(doc: jsPDF, page: number, total: number, generated: string, note?: string) {
   const pageW = doc.internal.pageSize.getWidth();
-  doc.setFillColor(...C.head);
-  doc.roundedRect(x, y - 3.5, pageW - x * 2, 8, 1.2, 1.2, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...C.navy);
-  doc.text('Cell guide', x + 3, y + 1.5);
+  const pageH = doc.internal.pageSize.getHeight();
+  doc.setFillColor(...C.navyDeep);
+  doc.rect(0, pageH - 10, pageW, 10, 'F');
+  doc.setTextColor(190, 210, 228);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.setTextColor(...C.muted);
-  doc.text(
-    '1) Time   2) Course code   3) Teacher · Room · Group   4) Class type   ·   Online classes tinted mint',
-    x + 28,
-    y + 1.5,
-  );
+  doc.text(note || 'Department of English · DIU SmartRoutine', 12, pageH - 4);
+  doc.text(`Page ${page} of ${total}`, pageW / 2, pageH - 4, { align: 'center' });
+  doc.text(generated, pageW - 12, pageH - 4, { align: 'right' });
 }
 
-/**
- * Professional weekly class routine PDF (master grid + per-batch pages).
- */
-export function exportTimetablePdf(
-  store: StoreState,
-  entries: TimetableEntry[],
-  _title = 'ENG Class Routine',
-) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const rows = toPdfRows(
-    store,
-    entries.filter((e) => !e.is_cancelled),
-  );
-  const batches = sortedBatches(store);
-  const activeDays = DAYS.filter((d) => rows.some((r) => r.day === d));
-  const generated = new Date().toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-  const sessions = uniqueSessions(store);
-
-  let y = drawPageChrome(doc, {
-    title: 'Class Routine — B.A. (Hons) in English',
-    subtitle: sessions ? `Session ${sessions}` : undefined,
-    meta: `Generated ${generated}`,
-  });
-
-  drawLegend(doc, 12, y);
-  y += 9;
-
-  const slotHead = Array.from({ length: MAX_SLOTS }, (_, i) => `${i + 1}${ordinal(i + 1)} Slot`);
-
-  const tableBase = {
+function tableTheme() {
+  return {
     theme: 'grid' as const,
     styles: {
       font: 'helvetica',
-      fontSize: 7.2,
-      cellPadding: { top: 2.2, right: 2, bottom: 2.2, left: 2 },
-      valign: 'top' as const,
-      halign: 'left' as const,
+      fontSize: 7.4,
+      cellPadding: { top: 2.4, right: 2, bottom: 2.4, left: 2 },
+      valign: 'middle' as const,
       overflow: 'linebreak' as const,
-      minCellHeight: 18,
       lineColor: C.line,
-      lineWidth: 0.25,
+      lineWidth: 0.2,
       textColor: C.ink,
+      minCellHeight: 9,
     },
     headStyles: {
       fillColor: C.navy,
       textColor: C.white,
       fontStyle: 'bold' as const,
-      fontSize: 8.5,
+      fontSize: 7.6,
       halign: 'center' as const,
       valign: 'middle' as const,
-      cellPadding: 3,
+      cellPadding: 2.6,
     },
     alternateRowStyles: {
-      fillColor: C.slotAlt,
+      fillColor: C.rowAlt,
     },
-    margin: { left: 10, right: 10, bottom: 14 },
+    margin: { left: 10, right: 10, bottom: 14, top: 10 },
   };
+}
 
-  for (const day of activeDays) {
-    const dayRows = batches
-      .map((batch) => {
-        const classes = rows
-          .filter((r) => r.day === day && r.batch_id === batch.id)
-          .sort(
-            (a, b) =>
-              a.start_time.localeCompare(b.start_time) ||
-              (a.group_name || '').localeCompare(b.group_name || ''),
-          );
-        return {
-          batchLabel: batchColumnLabel(batch),
-          slots: packSlots(classes),
-          hasClass: classes.length > 0,
-        };
-      })
-      .filter((r) => r.hasClass);
+function rowCells(r: RoutinePdfRow, includeBatch: boolean): string[] {
+  const base = [
+    DAY_FULL[r.day],
+    timeRange(r.start_time, r.end_time),
+  ];
+  if (includeBatch) base.push(r.batch_name || r.batch_id);
+  return [
+    ...base,
+    r.course_code,
+    r.course_title || '—',
+    teacherLabel(r),
+    roomLabel(r),
+    sectionLabel(r),
+    classKind(r),
+  ];
+}
 
-    if (!dayRows.length) continue;
+/**
+ * Professional DIU English class routine PDF (logos + clean schedule tables).
+ */
+export async function exportTimetablePdf(
+  store: StoreState,
+  entries: TimetableEntry[],
+  _title = 'ENG Class Routine',
+) {
+  const [uniLogo, engLogo] = await Promise.all([
+    loadImageDataUrl('/branding/diu-university-logo.png'),
+    loadImageDataUrl('/branding/diu-english-dept-logo.png'),
+  ]);
+  const logos = { uni: uniLogo, eng: engLogo };
 
-    if (y > 155) {
-      doc.addPage();
-      y = drawPageChrome(doc, {
-        title: 'Class Routine — continued',
-        subtitle: sessions ? `Session ${sessions}` : undefined,
-        meta: generated,
-        compact: true,
-      });
-    }
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const rows = sortRows(
+    toPdfRows(
+      store,
+      entries.filter((e) => !e.is_cancelled),
+    ),
+  );
+  const batches = sortedBatches(store).filter((b) => rows.some((r) => r.batch_id === b.id));
+  const generated = new Date().toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const sessions = uniqueSessions(store);
+  const sessionLine = sessions ? `Academic session ${sessions}` : 'Undergraduate programme';
 
-    doc.setFillColor(...C.softTeal);
-    doc.roundedRect(10, y, pageW - 20, 7, 1.5, 1.5, 'F');
-    doc.setTextColor(...C.teal);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(DAY_FULL[day].toUpperCase(), 14, y + 4.8);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...C.muted);
-    doc.text(`${dayRows.length} batch row${dayRows.length === 1 ? '' : 's'}`, pageW - 14, y + 4.8, {
-      align: 'right',
-    });
-    y += 9;
+  // ——— Cover / master schedule ———
+  let y = drawHeader(doc, logos, {
+    documentTitle: 'Official Class Routine  ·  B.A. (Hons.) in English',
+    sessionLine,
+    generated,
+  });
 
-    autoTable(doc, {
-      ...tableBase,
-      startY: y,
-      head: [['Batch / Session', ...slotHead]],
-      body: dayRows.map((r) => [r.batchLabel, ...r.slots]),
-      columnStyles: {
-        0: {
-          cellWidth: 32,
-          fontStyle: 'bold',
-          valign: 'middle',
-          halign: 'center',
-          fillColor: C.head,
-          textColor: C.navy,
-          fontSize: 7.5,
-        },
-        1: { cellWidth: 56 },
-        2: { cellWidth: 56 },
-        3: { cellWidth: 56 },
-        4: { cellWidth: 56 },
-      },
-      didParseCell(data) {
-        if (data.section !== 'body' || data.column.index < 1) return;
-        const raw = String(data.cell.raw || '');
-        if (!raw.trim()) {
-          data.cell.styles.fillColor = [252, 253, 255];
-          return;
-        }
-        data.cell.styles.fontSize = 6.9;
-        data.cell.styles.halign = 'left';
-        if (raw.includes('Online')) {
-          data.cell.styles.fillColor = [240, 248, 247];
-        }
-      },
-    });
+  doc.setFillColor(...C.band);
+  doc.roundedRect(10, y, pageW - 20, 11, 1.8, 1.8, 'F');
+  doc.setTextColor(...C.navy);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Master schedule (all batches)', 14, y + 4.6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...C.muted);
+  doc.text(
+    `${rows.length} classes  ·  ${batches.length} batches  ·  Times shown in Bangladesh local time`,
+    14,
+    y + 9,
+  );
+  y += 15;
 
-    y = lastTableY(doc, y) + 7;
-  }
+  const masterHead = [
+    'Day',
+    'Time',
+    'Batch',
+    'Code',
+    'Course title',
+    'Teacher',
+    'Room',
+    'Sec',
+    'Type',
+  ];
 
+  autoTable(doc, {
+    ...tableTheme(),
+    startY: y,
+    head: [masterHead],
+    body: rows.map((r) => rowCells(r, true)),
+    columnStyles: {
+      0: { cellWidth: 22, halign: 'left', fontStyle: 'bold', textColor: C.navy },
+      1: { cellWidth: 30, halign: 'center' },
+      2: { cellWidth: 26, halign: 'left' },
+      3: { cellWidth: 26, halign: 'left', fontStyle: 'bold' },
+      4: { cellWidth: 68, halign: 'left' },
+      5: { cellWidth: 48, halign: 'left' },
+      6: { cellWidth: 18, halign: 'center' },
+      7: { cellWidth: 12, halign: 'center' },
+      8: { cellWidth: 18, halign: 'center' },
+    },
+    didParseCell(data) {
+      if (data.section !== 'body') return;
+      if (data.column.index === 8 && String(data.cell.raw).toLowerCase() === 'online') {
+        data.cell.styles.textColor = C.blue;
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+
+  // ——— Per-batch pages ———
   for (const batch of batches) {
     const batchRows = rows.filter((r) => r.batch_id === batch.id);
     if (!batchRows.length) continue;
 
     doc.addPage();
-    y = drawPageChrome(doc, {
-      title: `Weekly Routine — ${batch.name}`,
-      subtitle: sessionLabel(batch.session),
-      meta: generated,
+    y = drawHeader(doc, logos, {
+      documentTitle: `Weekly routine  ·  ${batch.name}`,
+      sessionLine: `Session ${sessionLabel(batch.session)}  ·  ${batchRows.length} classes`,
+      generated,
+      compact: true,
     });
 
-    doc.setFillColor(...C.navyMid);
+    doc.setFillColor(...C.headSoft);
     doc.roundedRect(10, y, pageW - 20, 8, 1.5, 1.5, 'F');
-    doc.setTextColor(...C.white);
+    doc.setTextColor(...C.navy);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text('Single-batch view  ·  Print or share with this section only', 14, y + 5.3);
+    doc.setFontSize(8.5);
+    doc.text(
+      'For students & course teachers of this batch  ·  Department of English, DIU',
+      14,
+      y + 5.2,
+    );
     y += 12;
 
-    const body = DAYS.map((day) => {
-      const classes = batchRows
-        .filter((r) => r.day === day)
-        .sort((a, b) => a.start_time.localeCompare(b.start_time));
-      if (!classes.length) return null;
-      return [DAY_FULL[day], ...packSlots(classes)];
-    }).filter(Boolean) as string[][];
+    const batchHead = ['Day', 'Time', 'Code', 'Course title', 'Teacher', 'Room', 'Sec', 'Type'];
 
-    autoTable(doc, {
-      ...tableBase,
-      startY: y,
-      head: [['Day', ...slotHead]],
-      body,
-      columnStyles: {
-        0: {
-          cellWidth: 28,
-          fontStyle: 'bold',
-          valign: 'middle',
-          halign: 'center',
-          fillColor: C.dayFill,
-          textColor: C.white,
-          fontSize: 8,
+    // One table per day for clearer reading
+    for (const day of DAYS) {
+      const dayRows = batchRows.filter((r) => r.day === day);
+      if (!dayRows.length) continue;
+
+      if (y > 170) {
+        doc.addPage();
+        y = drawHeader(doc, logos, {
+          documentTitle: `Weekly routine  ·  ${batch.name} (continued)`,
+          sessionLine: `Session ${sessionLabel(batch.session)}`,
+          generated,
+          compact: true,
+        });
+      }
+
+      doc.setFillColor(...C.navy);
+      doc.roundedRect(10, y, pageW - 20, 6.5, 1.2, 1.2, 'F');
+      doc.setTextColor(...C.white);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(DAY_FULL[day].toUpperCase(), 14, y + 4.3);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text(
+        `${dayRows.length} class${dayRows.length === 1 ? '' : 'es'}`,
+        pageW - 14,
+        y + 4.3,
+        { align: 'right' },
+      );
+      y += 8;
+
+      autoTable(doc, {
+        ...tableTheme(),
+        startY: y,
+        head: [batchHead],
+        body: dayRows.map((r) => {
+          const cells = rowCells(r, false);
+          // drop Day column for day-banded tables (already in banner)
+          return cells.slice(1);
+        }),
+        columnStyles: {
+          0: { cellWidth: 32, halign: 'center' },
+          1: { cellWidth: 28, halign: 'left', fontStyle: 'bold' },
+          2: { cellWidth: 78, halign: 'left' },
+          3: { cellWidth: 55, halign: 'left' },
+          4: { cellWidth: 20, halign: 'center' },
+          5: { cellWidth: 14, halign: 'center' },
+          6: { cellWidth: 20, halign: 'center' },
         },
-      },
-      didParseCell(data) {
-        if (data.section !== 'body' || data.column.index < 1) return;
-        data.cell.styles.fontSize = 7;
-        data.cell.styles.halign = 'left';
-      },
-    });
+      });
+
+      y = lastTableY(doc, y) + 6;
+    }
   }
 
+  // ——— Import appendix (machine data) ———
   const payload = JSON.stringify({ version: 1, entries: rows });
   doc.addPage();
-  doc.setFillColor(...C.navy);
+  doc.setFillColor(...C.navyDeep);
   doc.rect(0, 0, pageW, 22, 'F');
   doc.setTextColor(...C.white);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text('SmartRoutine import data', 14, 10);
+  doc.text('Appendix — SmartRoutine import data', 14, 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(200, 214, 230);
-  doc.text('System use only — skip this page when printing the class routine.', 14, 16);
+  doc.setTextColor(190, 210, 228);
+  doc.text('System use only. Skip this page when printing the official class routine.', 14, 16);
   doc.setTextColor(...C.muted);
-  doc.setFontSize(4.2);
+  doc.setFontSize(4);
   const blob = `${ROUTINE_JSON_START}${payload}${ROUTINE_JSON_END}`;
   doc.text(doc.splitTextToSize(blob, pageW - 28), 14, 30);
 
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
-    const pageH = doc.internal.pageSize.getHeight();
     const isImport = i === total;
-    doc.setFillColor(...C.navy);
-    doc.rect(0, pageH - 8, pageW, 8, 'F');
-    doc.setTextColor(200, 214, 230);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(
+    drawFooter(
+      doc,
+      i,
+      total,
+      generated,
       isImport
-        ? 'DIU English · SmartRoutine · Do not print'
-        : 'DIU English · SmartRoutine class routine',
-      12,
-      pageH - 3.2,
+        ? 'DIU English · SmartRoutine · Do not print this page'
+        : 'Daffodil International University · Department of English · Official class routine',
     );
-    doc.text(`Page ${i} of ${total}`, pageW / 2, pageH - 3.2, { align: 'center' });
-    if (!isImport) {
-      doc.text(generated, pageW - 12, pageH - 3.2, { align: 'right' });
-    }
   }
 
-  doc.save('diu_english_class_routine.pdf');
-}
-
-function ordinal(n: number): string {
-  if (n === 1) return 'st';
-  if (n === 2) return 'nd';
-  if (n === 3) return 'rd';
-  return 'th';
+  const stamp = new Date().toISOString().slice(0, 10);
+  doc.save(`DIU_English_Class_Routine_${stamp}.pdf`);
 }

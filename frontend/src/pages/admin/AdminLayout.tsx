@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   BarChart3,
@@ -10,13 +10,15 @@ import {
   FlaskConical,
   LayoutDashboard,
   LogOut,
+  Menu,
   Users,
   GraduationCap,
   Layers,
   Wand2,
+  X,
   type LucideIcon,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -80,75 +82,135 @@ export function AdminLayout() {
   const { mode, store } = useData();
   const { unread } = useNotifications();
   const navigate = useNavigate();
+  const location = useLocation();
   const clashes = useMemo(() => findConflicts(store?.timetable || []).length, [store]);
+  const [navOpen, setNavOpen] = useState(false);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNavOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [navOpen]);
 
   return (
     <>
       <CampusAtmosphere />
-      <div className="admin-shell ux-shell chairman-console">
-      <aside className="admin-sidebar">
-        <div className="brand">
-          <BrandMark
-            variant="sidebar"
-            title="Chairman Console"
-            subtitle={session?.username || 'Super Admin'}
-          />
-          <UserAvatar
-            src={session?.profilePic}
-            name={session?.username || 'C'}
-            className="sm ring brand-avatar"
-          />
-        </div>
-        <div className="admin-sidebar__tools">
-          <ThemeToggle />
-          <PortalAlerts noticesTo="/admin/notices" />
-        </div>
-        <nav aria-label="Admin navigation">
-          {navGroups.map((group) => (
-            <div key={group.label} className="nav-group">
-              <p className="nav-group__label">{group.label}</p>
-              {group.items.map(({ to, end, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  className={({ isActive }) => (isActive ? 'active' : '')}
-                >
-                  <span className="nav-ico">
-                    <Icon size={17} />
-                  </span>
-                  <span className="nav-label">{label}</span>
-                  {label === 'Notices' && unread > 0 && (
-                    <span className="nav-badge">{unread > 9 ? '9+' : unread}</span>
-                  )}
-                  {label === 'Conflicts' && clashes > 0 && (
-                    <span className="nav-badge warn" title={`${clashes} scheduling clashes`}>
-                      {clashes > 9 ? '9+' : clashes}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <div className={`backend-pill ${mode}`}>{modeLabels[mode]}</div>
-          <p className="sidebar-dept">Department of English · DIU</p>
+      <div
+        className={`admin-shell ux-shell chairman-console${navOpen ? ' is-nav-open' : ''}`}
+      >
+        <header className="admin-mobile-bar">
           <button
-            className="btn-danger sidebar-logout"
             type="button"
-            onClick={() => {
-              logout();
-              navigate('/login', { replace: true });
-            }}
+            className="admin-menu-btn"
+            aria-label={navOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={navOpen}
+            aria-controls="admin-sidebar-nav"
+            onClick={() => setNavOpen((v) => !v)}
           >
-            <LogOut size={16} /> Logout
+            {navOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
-        </div>
-      </aside>
-      <main className="admin-main">
-        <Outlet />
-      </main>
+          <div className="admin-mobile-bar__brand">
+            <BrandMark
+              variant="topbar"
+              title="Chairman Console"
+              subtitle={session?.username || 'Super Admin'}
+            />
+          </div>
+          <div className="admin-mobile-bar__tools">
+            <ThemeToggle />
+            <PortalAlerts noticesTo="/admin/notices" />
+            <UserAvatar
+              src={session?.profilePic}
+              name={session?.username || 'C'}
+              className="sm ring"
+            />
+          </div>
+        </header>
+
+        <button
+          type="button"
+          className="admin-nav-backdrop"
+          aria-label="Close menu"
+          tabIndex={navOpen ? 0 : -1}
+          onClick={() => setNavOpen(false)}
+        />
+
+        <aside className="admin-sidebar" id="admin-sidebar-nav">
+          <div className="brand">
+            <BrandMark
+              variant="sidebar"
+              title="Chairman Console"
+              subtitle={session?.username || 'Super Admin'}
+            />
+            <UserAvatar
+              src={session?.profilePic}
+              name={session?.username || 'C'}
+              className="sm ring brand-avatar"
+            />
+          </div>
+          <div className="admin-sidebar__tools">
+            <ThemeToggle />
+            <PortalAlerts noticesTo="/admin/notices" />
+          </div>
+          <nav aria-label="Admin navigation">
+            {navGroups.map((group) => (
+              <div key={group.label} className="nav-group">
+                <p className="nav-group__label">{group.label}</p>
+                {group.items.map(({ to, end, label, icon: Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) => (isActive ? 'active' : '')}
+                    onClick={() => setNavOpen(false)}
+                  >
+                    <span className="nav-ico">
+                      <Icon size={17} />
+                    </span>
+                    <span className="nav-label">{label}</span>
+                    {label === 'Notices' && unread > 0 && (
+                      <span className="nav-badge">{unread > 9 ? '9+' : unread}</span>
+                    )}
+                    {label === 'Conflicts' && clashes > 0 && (
+                      <span className="nav-badge warn" title={`${clashes} scheduling clashes`}>
+                        {clashes > 9 ? '9+' : clashes}
+                      </span>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <div className="sidebar-footer">
+            <div className={`backend-pill ${mode}`}>{modeLabels[mode]}</div>
+            <p className="sidebar-dept">Department of English · DIU</p>
+            <button
+              className="btn-danger sidebar-logout"
+              type="button"
+              onClick={() => {
+                logout();
+                navigate('/login', { replace: true });
+              }}
+            >
+              <LogOut size={16} /> Logout
+            </button>
+          </div>
+        </aside>
+        <main className="admin-main">
+          <Outlet />
+        </main>
       </div>
     </>
   );

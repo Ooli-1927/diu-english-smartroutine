@@ -8509,11 +8509,16 @@ select.input:focus {
    Cross-portal mobile layout (student / teacher / chairman)
    ============================================================ */
 
-html,
-body {
-  overflow-x: clip;
-  max-width: 100%;
+.admin-mobile-bar,
+.admin-nav-backdrop {
+  display: none;
 }
+
+.admin-menu-btn {
+  appearance: none;
+  font: inherit;
+}
+
 
 @media (max-width: 960px) {
   .admin-shell {
@@ -8522,24 +8527,102 @@ body {
     grid-template-columns: none !important;
   }
 
-  .admin-shell > .admin-sidebar {
-    position: sticky !important;
+  .admin-mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: sticky;
     top: 0;
-    left: auto !important;
-    bottom: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: none !important;
-    margin: 0 !important;
-    z-index: 40;
-    overflow-x: auto;
-    overflow-y: visible;
-    border-radius: 0;
-    flex-direction: row;
-    flex-wrap: wrap;
+    z-index: 45;
+    padding: 10px 12px;
+    padding-top: max(10px, env(safe-area-inset-top));
+    background:
+      linear-gradient(180deg, #0c3a5c 0%, #0a2540 100%);
+    border-bottom: 1px solid color-mix(in srgb, var(--diu-sky) 22%, transparent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+
+  .admin-mobile-bar__brand {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .admin-mobile-bar__brand .brand-mark__sub {
+    display: none;
+  }
+
+  .admin-mobile-bar__tools {
+    display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 12px;
+    flex: 0 0 auto;
+  }
+
+  .admin-menu-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid color-mix(in srgb, #fff 22%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, #fff 10%, transparent);
+    color: #fff;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .admin-menu-btn:hover,
+  .admin-menu-btn:focus-visible {
+    background: color-mix(in srgb, #fff 18%, transparent);
+    outline: none;
+  }
+
+  .admin-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 48;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: rgba(6, 18, 32, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    cursor: pointer;
+  }
+
+  .admin-shell.is-nav-open .admin-nav-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .admin-shell > .admin-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: min(300px, 86vw) !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    z-index: 50;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    border-radius: 0 18px 18px 0;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 14px !important;
+    padding: 16px 14px !important;
+    padding-top: max(16px, env(safe-area-inset-top));
+    transform: translateX(-105%);
+    transition: transform 0.22s var(--ease-out, ease);
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.28);
+  }
+
+  .admin-shell.is-nav-open > .admin-sidebar {
+    transform: translateX(0);
   }
 
   .admin-shell > .admin-main {
@@ -8550,37 +8633,42 @@ body {
     padding-right: 12px;
   }
 
-  .admin-sidebar .brand-mark,
-  .admin-sidebar .sidebar-brand {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .admin-sidebar nav {
-    display: flex !important;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    gap: 6px;
+  .admin-sidebar .brand {
     width: 100%;
-    padding-bottom: 2px;
-    scrollbar-width: thin;
   }
 
-  .admin-sidebar nav .nav-group {
-    display: contents;
-  }
-
-  .admin-sidebar nav .nav-group__label {
+  .admin-sidebar__tools {
     display: none;
   }
 
+  .admin-sidebar nav {
+    display: grid !important;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    gap: 4px;
+    width: 100%;
+    padding-bottom: 2px;
+  }
+
+  .admin-sidebar nav .nav-group {
+    display: grid;
+    gap: 3px;
+    margin-bottom: 10px;
+  }
+
+  .admin-sidebar nav .nav-group__label {
+    display: block;
+  }
+
   .admin-sidebar a {
-    flex: 0 0 auto;
+    flex: none;
+    width: 100%;
     white-space: nowrap;
-    padding: 8px 12px;
-    border-radius: 999px;
+    padding: 11px 12px;
+    border-radius: 14px;
+    box-sizing: border-box;
   }
 
   .admin-sidebar a:hover,
@@ -8590,15 +8678,16 @@ body {
 
   .sidebar-footer {
     width: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
+    display: grid;
+    gap: 10px;
+    margin-top: auto;
   }
 
   .sidebar-logout {
     margin-top: 0 !important;
-    margin-left: auto;
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
   }
 
   .page,
@@ -8609,6 +8698,13 @@ body {
     padding-right: max(12px, env(safe-area-inset-right));
     max-width: 100%;
     box-sizing: border-box;
+  }
+}
+
+@media (min-width: 961px) {
+  .admin-mobile-bar,
+  .admin-nav-backdrop {
+    display: none !important;
   }
 }
 

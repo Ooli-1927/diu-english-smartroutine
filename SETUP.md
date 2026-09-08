@@ -4,6 +4,12 @@ Passwords for seeded admins, teachers, and students are **generated at seed time
 
 ## Install and run
 
+1. **MongoDB** must be reachable before the API starts (local or Atlas).
+2. Copy `backend/.env.example` → `backend/.env` and set:
+   - `MONGODB_URI` — e.g. `mongodb://127.0.0.1:27017` or an Atlas `mongodb+srv://…` URI
+   - `MONGODB_DB` — defaults to `smartroutine`
+3. Then:
+
 ```bash
 # from repo root (DIU-SmartRoutine/)
 npm install          # root deps (concurrently)
@@ -12,6 +18,8 @@ npm run dev          # API :4000 + Vite :5173 (Windows / macOS / Linux)
 ```
 
 Open http://localhost:5173. Seed credentials print in the API terminal on first boot — see below.
+
+**Local Mongo (standalone):** transactions fall back to sequential writes — fine for development. Atlas (replica set) supports multi-document transactions.
 
 Optional: `npm run dev:windows` still launches two PowerShell windows via `start-dev.ps1`.
 
@@ -35,7 +43,7 @@ cd backend
 npm run reset
 ```
 
-This wipes the local SQLite database and re-seeds from `data/seed.json`, printing a **new** credential list. Any previous seed passwords stop working.
+This wipes the MongoDB collections and re-seeds from `data/seed.json`, printing a **new** credential list. Any previous seed passwords stop working.
 
 You can also set `FORCE_SEED=1` when starting the API to reseed on boot.
 

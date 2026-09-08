@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "SmartRoutine backend — Express + SQLite REST API",
+  "description": "SmartRoutine backend — Express + MongoDB REST API",
   "engines": {
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node --experimental-sqlite src/index.js",
-    "dev": "node --experimental-sqlite --watch --watch-path=./src src/index.js",
-    "seed": "node --experimental-sqlite src/seed.js",
-    "reset": "node --experimental-sqlite src/seed.js --force"
+    "start": "node src/index.js",
+    "dev": "node --watch --watch-path=./src src/index.js",
+    "seed": "node src/seed.js",
+    "reset": "node src/seed.js --force"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -20,6 +20,7 @@
     "express": "^5.1.0",
     "googleapis": "^174.0.1",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.21.0",
     "nodemailer": "^7.0.13",
     "web-push": "^3.6.7"
   }

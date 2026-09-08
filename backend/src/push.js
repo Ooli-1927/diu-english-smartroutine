@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import webpush from 'web-push';
-import { all, bind, get, run } from './db.js';
+import {
+  bind,
+  caseInsensitive,
+  deleteOne,
+  deleteMany,
+  findMany,
+  findOne,
+  insertOne,
+  updateOne,
+} from './db.js';
 
 let configured = false;
 
@@ -31,40 +40,41 @@ export function getVapidPublicKey() {
 }
 
 /** Map notification recipient → user ids that may have push subscriptions. */
-function userIdsForRecipient(recipientType, recipientId) {
+async function userIdsForRecipient(recipientType, recipientId) {
   if (!recipientId) return [];
 
   if (recipientType === 'student') {
     if (String(recipientId).includes(':')) {
       const [batchId, section] = String(recipientId).split(':');
-      return all(
-        `SELECT id FROM students WHERE batch_id = ? AND upper(COALESCE(section, '')) = upper(?)`,
-        [batchId, section],
-      ).map((r) => r.id);
+      const students = await findMany('students', {
+        batch_id: batchId,
+        ...caseInsensitive('section', section),
+      });
+      return students.map((r) => r.id);
     }
-    const batch = get('SELECT id FROM batches WHERE id = ?', [recipientId]);
+    const batch = await findOne('batches', { id: recipientId });
     if (batch) {
-      return all('SELECT id FROM students WHERE batch_id = ?', [recipientId]).map((r) => r.id);
+      const students = await findMany('students', { batch_id: recipientId });
+      return students.map((r) => r.id);
     }
-    const student = get('SELECT id FROM students WHERE id = ? OR student_id = ?', [
-      recipientId,
-      recipientId,
-    ]);
+    const student = await findOne('students', {
+      $or: [{ id: recipientId }, { student_id: recipientId }],
+    });
     return student ? [student.id] : [];
   }
 
   if (recipientType === 'teacher') {
-    const teacher = get('SELECT id FROM teachers WHERE initial = ? OR id = ?', [
-      recipientId,
-      recipientId,
-    ]);
+    const teacher = await findOne('teachers', {
+      $or: [{ initial: recipientId }, { id: recipientId }],
+    });
     return teacher ? [teacher.id] : [];
   }
 
   if (recipientType === 'super_admin') {
-    const admin = get('SELECT id FROM admins WHERE id = ?', [recipientId]);
+    const admin = await findOne('admins', { id: recipientId });
     if (admin) return [admin.id];
-    return all('SELECT id FROM admins').map((r) => r.id);
+    const admins = await findMany('admins', {});
+    return admins.map((r) => r.id);
   }
 
   return [];
@@ -80,7 +90,7 @@ function inboxPath(recipientType) {
  * Upsert a browser PushSubscription for the authenticated user.
  * Endpoint is unique — re-login on another account moves the subscription.
  */
-export function savePushSubscription(session, subscription) {
+export async function savePushSubscription(session, subscription) {
   const endpoint = String(subscription?.endpoint || '').trim();
   const p256dh = String(subscription?.keys?.p256dh || '').trim();
   const auth = String(subscription?.keys?.auth || '').trim();
@@ -90,49 +100,54 @@ export function savePushSubscription(session, subscription) {
     throw err;
   }
 
-  const existing = get('SELECT id FROM push_subscriptions WHERE endpoint = ?', [endpoint]);
+  const existing = await findOne('push_subscriptions', { endpoint });
   if (existing) {
-    run(
-      `UPDATE push_subscriptions
-       SET user_id = ?, user_role = ?, p256dh = ?, auth = ?
-       WHERE endpoint = ?`,
-      [bind(session.id), bind(session.role), bind(p256dh), bind(auth), endpoint],
+    await updateOne(
+      'push_subscriptions',
+      { endpoint },
+      {
+        $set: {
+          user_id: bind(session.id),
+          user_role: bind(session.role),
+          p256dh: bind(p256dh),
+          auth: bind(auth),
+        },
+      },
     );
     return existing.id;
   }
 
   const id = randomUUID();
-  run(
-    `INSERT INTO push_subscriptions (id, user_id, user_role, endpoint, p256dh, auth)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, bind(session.id), bind(session.role), endpoint, bind(p256dh), bind(auth)],
-  );
+  await insertOne('push_subscriptions', {
+    id,
+    user_id: bind(session.id),
+    user_role: bind(session.role),
+    endpoint,
+    p256dh: bind(p256dh),
+    auth: bind(auth),
+  });
   return id;
 }
 
-export function removePushSubscription(session, endpoint) {
+export async function removePushSubscription(session, endpoint) {
   if (endpoint) {
-    run('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?', [
-      String(endpoint),
-      session.id,
-    ]);
+    await deleteMany('push_subscriptions', {
+      endpoint: String(endpoint),
+      user_id: session.id,
+    });
     return;
   }
-  run('DELETE FROM push_subscriptions WHERE user_id = ?', [session.id]);
+  await deleteMany('push_subscriptions', { user_id: session.id });
 }
 
 /** Fan-out Web Push for the same audience rules as in-app + email notices. */
 export async function sendPushForNotification({ type, title, body, recipientType, recipientId }) {
   if (!configured) return;
 
-  const userIds = userIdsForRecipient(recipientType, recipientId);
+  const userIds = await userIdsForRecipient(recipientType, recipientId);
   if (!userIds.length) return;
 
-  const placeholders = userIds.map(() => '?').join(',');
-  const subs = all(
-    `SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id IN (${placeholders})`,
-    userIds,
-  );
+  const subs = await findMany('push_subscriptions', { user_id: { $in: userIds } });
   if (!subs.length) return;
 
   const plainBody = String(body || '')
@@ -160,7 +175,7 @@ export async function sendPushForNotification({ type, title, body, recipientType
       } catch (err) {
         const status = err?.statusCode;
         if (status === 404 || status === 410) {
-          run('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
+          await deleteOne('push_subscriptions', { id: sub.id });
         } else {
           console.warn('Web Push send failed:', err?.message || err);
         }

@@ -19,6 +19,7 @@ data/mail-smtp.json
 *.db
 *.db-wal
 *.db-shm
+.mongo-local/
 
 # import previews / temp
 scripts/_preview_*
@@ -35,3 +36,5 @@ Thumbs.db
 
 # Flutter original app (not needed for web deploy; keeps secrets/build out)
 CapstoneLast/
+
+backend/out-server.txt

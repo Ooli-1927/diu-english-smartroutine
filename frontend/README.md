@@ -6,7 +6,7 @@ Full website conversion of the Capstone Flutter app (**DIU English Routine / Sma
 
 - **Frontend:** React + TypeScript + Vite
 - **Routing:** React Router
-- **Backend:** [`backend`](../backend) — Express + SQLite with JWT auth and bcrypt password hashing
+- **Backend:** [`backend`](../backend) — Express + MongoDB with JWT auth and bcrypt password hashing
 - **Fallbacks:** Supabase (optional) and offline JSON demo mode
 - **PDF export:** jsPDF
 - **UI:** Poppins + design tokens from `SCREENS.md`
@@ -48,7 +48,7 @@ npm run dev                 # API http://127.0.0.1:4000 + web http://localhost:5
 Or two terminals:
 
 ```bash
-# 1. backend — creates and seeds data/smartroutine.db on first run
+# 1. backend — connects to MongoDB and auto-seeds on first run
 cd backend
 npm install
 npm start                # http://127.0.0.1:4000
@@ -71,7 +71,7 @@ Demo/seed credentials are generated at setup time and printed to the console —
 
 The app detects its data source at startup and shows it in the admin sidebar / login pill:
 
-1. **Live server + SQLite** — `/api/health` responds. All reads and writes go through the
+1. **Live server + MongoDB** — `/api/health` responds with `"database":"mongodb"`. All reads and writes go through the
    REST API; passwords are verified server-side and permissions are enforced per role.
 2. **Supabase cloud** — no API, but `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are set.
 3. **Offline demo data** — neither is available. Seeded from `public/data/data.json` and
@@ -104,7 +104,7 @@ RLS; prefer the Express API for production.
 
 ```
 CapstoneLast/
-â”œâ”€â”€ backend/      # Express + SQLite backend (REST, JWT, seed, smoke tests)
+├── backend/      # Express + MongoDB backend (REST, JWT, seed, smoke tests)
 â”œâ”€â”€ frontend/
 â”‚   â”œâ”€â”€ public/data/       # Seed JSON + import templates
 â”‚   â””â”€â”€ src/

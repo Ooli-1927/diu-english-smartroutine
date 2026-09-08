@@ -1,6 +1,15 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { all, bind, get, run } from '../db.js';
+import {
+  bind,
+  count,
+  deleteOne,
+  findMany,
+  findOne,
+  insertOne,
+  nowIso,
+  updateOne,
+} from '../db.js';
 import { requireAuth, requireRole } from '../auth.js';
 import { notificationOut } from '../shape.js';
 import { notifyAppointmentDecision, notifyAppointmentRequest } from '../notify.js';
@@ -49,21 +58,21 @@ miscRouter.get('/push/status', requireAuth, (_req, res) => {
   res.json({ configured: isPushConfigured() });
 });
 
-miscRouter.post('/push/subscribe', requireAuth, (req, res, next) => {
+miscRouter.post('/push/subscribe', requireAuth, async (req, res, next) => {
   try {
     if (!isPushConfigured()) {
       return res.status(503).json({ error: 'Web Push is not configured on the server' });
     }
-    const id = savePushSubscription(req.session, req.body);
+    const id = await savePushSubscription(req.session, req.body);
     res.json({ ok: true, id });
   } catch (err) {
     next(err);
   }
 });
 
-miscRouter.delete('/push/subscribe', requireAuth, (req, res, next) => {
+miscRouter.delete('/push/subscribe', requireAuth, async (req, res, next) => {
   try {
-    removePushSubscription(req.session, req.body?.endpoint);
+    await removePushSubscription(req.session, req.body?.endpoint);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -121,64 +130,84 @@ miscRouter.post('/mail/test', requireRole('super_admin'), async (req, res, next)
   }
 });
 
-miscRouter.get('/analytics', requireRole('super_admin'), (_req, res) => {
-  const totals = {
-    teachers: get('SELECT COUNT(*) AS n FROM teachers').n,
-    students: get('SELECT COUNT(*) AS n FROM students').n,
-    batches: get('SELECT COUNT(*) AS n FROM batches').n,
-    courses: get('SELECT COUNT(*) AS n FROM courses').n,
-    rooms: get('SELECT COUNT(*) AS n FROM rooms').n,
-    classes: get('SELECT COUNT(*) AS n FROM timetable_entries').n,
-    cancelled: get('SELECT COUNT(*) AS n FROM timetable_entries WHERE is_cancelled = 1').n,
-  };
+miscRouter.get('/analytics', requireRole('super_admin'), async (_req, res, next) => {
+  try {
+    const entries = await findMany('timetable_entries', {});
+    const totals = {
+      teachers: await count('teachers'),
+      students: await count('students'),
+      batches: await count('batches'),
+      courses: await count('courses'),
+      rooms: await count('rooms'),
+      classes: entries.length,
+      cancelled: entries.filter((e) => Boolean(e.is_cancelled)).length,
+    };
 
-  const groupBy = (column) =>
-    all(`SELECT ${column} AS key, COUNT(*) AS count FROM timetable_entries GROUP BY ${column}`)
-      .reduce((acc, row) => ({ ...acc, [row.key ?? 'Unassigned']: row.count }), {});
+    const groupBy = (column) =>
+      entries.reduce((acc, row) => {
+        const key = row[column] ?? 'Unassigned';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
 
-  res.json({
-    totals,
-    byDay: groupBy('day'),
-    byType: groupBy('type'),
-    byMode: groupBy('mode'),
-    byBatch: groupBy('batch_id'),
-    byTeacher: groupBy('teacher_initial'),
-  });
+    res.json({
+      totals,
+      byDay: groupBy('day'),
+      byType: groupBy('type'),
+      byMode: groupBy('mode'),
+      byBatch: groupBy('batch_id'),
+      byTeacher: groupBy('teacher_initial'),
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 /** Students see batch notices plus personal appointment replies. */
-miscRouter.get('/notifications', requireAuth, (req, res) => {
-  const { role, batchId, teacherInitial, studentId } = req.session;
-  if (role === 'super_admin') {
-    return res.json(
-      all('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100').map(notificationOut),
+miscRouter.get('/notifications', requireAuth, async (req, res, next) => {
+  try {
+    const { role, batchId, teacherInitial, studentId } = req.session;
+    if (role === 'super_admin') {
+      const rows = await findMany(
+        'notifications',
+        {},
+        { sort: { created_at: -1 }, limit: 100 },
+      );
+      return res.json(rows.map(notificationOut));
+    }
+    if (role === 'student') {
+      const sectionKey =
+        req.session.section && batchId ? `${batchId}:${req.session.section}` : null;
+      const recipientIds = [batchId, studentId].filter(Boolean);
+      if (sectionKey) recipientIds.push(sectionKey);
+      const rows = await findMany(
+        'notifications',
+        {
+          recipient_type: 'student',
+          recipient_id: { $in: recipientIds },
+        },
+        { sort: { created_at: -1 }, limit: 100 },
+      );
+      return res.json(rows.map(notificationOut));
+    }
+    const rows = await findMany(
+      'notifications',
+      { recipient_type: 'teacher', recipient_id: teacherInitial },
+      { sort: { created_at: -1 }, limit: 100 },
     );
+    res.json(rows.map(notificationOut));
+  } catch (e) {
+    next(e);
   }
-  if (role === 'student') {
-    const sectionKey =
-      req.session.section && batchId ? `${batchId}:${req.session.section}` : null;
-    const rows = all(
-      `SELECT * FROM notifications
-       WHERE recipient_type = 'student'
-         AND (recipient_id = ? OR recipient_id = ?${sectionKey ? ' OR recipient_id = ?' : ''})
-       ORDER BY created_at DESC LIMIT 100`,
-      sectionKey
-        ? [bind(batchId), bind(studentId), bind(sectionKey)]
-        : [bind(batchId), bind(studentId)],
-    );
-    return res.json(rows.map(notificationOut));
-  }
-  res.json(
-    all(
-      'SELECT * FROM notifications WHERE recipient_type = ? AND recipient_id = ? ORDER BY created_at DESC LIMIT 100',
-      ['teacher', bind(teacherInitial)],
-    ).map(notificationOut),
-  );
 });
 
-miscRouter.patch('/notifications/:id/read', requireAuth, (req, res) => {
-  run('UPDATE notifications SET is_read = 1 WHERE id = ?', [req.params.id]);
-  res.json({ ok: true });
+miscRouter.patch('/notifications/:id/read', requireAuth, async (req, res, next) => {
+  try {
+    await updateOne('notifications', { id: req.params.id }, { $set: { is_read: true } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
 });
 
 function requireTeacherInitial(req) {
@@ -191,7 +220,7 @@ function slotBody(body = {}) {
   const end_time = normalizeClock(body.end_time);
   const location = String(body.location || '').trim();
   const note = String(body.note || '').trim();
-  const is_active = body.is_active === false || body.is_active === 0 ? 0 : 1;
+  const is_active = body.is_active === false || body.is_active === 0 ? false : true;
   return { day, start_time, end_time, location, note, is_active };
 }
 
@@ -202,34 +231,42 @@ function validateSlotTimes(day, start_time, end_time) {
   return null;
 }
 
-miscRouter.get('/appointment-slots', requireAuth, (req, res, next) => {
+miscRouter.get('/appointment-slots', requireAuth, async (req, res, next) => {
   try {
     const queryTeacher = String(req.query.teacher_initial || '').trim();
     const own = requireTeacherInitial(req);
 
     if (req.session.role === 'student' && !queryTeacher) {
-      const slots = all(
-        `SELECT * FROM appointment_slots WHERE is_active = 1
-         ORDER BY teacher_initial, start_time`,
-      );
+      const slots = await findMany('appointment_slots', { is_active: { $ne: false } });
+      slots.sort((a, b) => {
+        const t = String(a.teacher_initial).localeCompare(String(b.teacher_initial));
+        if (t) return t;
+        return String(a.start_time).localeCompare(String(b.start_time));
+      });
       return res.json({ teacher_initial: null, slots: slots.map(slotOut), windows: [] });
     }
 
     if (req.session.role === 'super_admin' && !queryTeacher) {
+      const slots = await findMany('appointment_slots', {});
+      slots.sort((a, b) => {
+        const t = String(a.teacher_initial).localeCompare(String(b.teacher_initial));
+        if (t) return t;
+        return String(a.start_time).localeCompare(String(b.start_time));
+      });
       return res.json({
         teacher_initial: null,
-        slots: all('SELECT * FROM appointment_slots ORDER BY teacher_initial, start_time').map(slotOut),
+        slots: slots.map(slotOut),
         windows: [],
       });
     }
 
     const initial = queryTeacher || own;
     if (!initial) return res.status(400).json({ error: 'teacher_initial is required' });
-    if (!getTeacher(initial)) return res.status(400).json({ error: 'unknown teacher_initial' });
+    if (!(await getTeacher(initial))) return res.status(400).json({ error: 'unknown teacher_initial' });
 
-    const slots = teacherSlots(initial, { activeOnly: req.session.role === 'student' });
+    const slots = await teacherSlots(initial, { activeOnly: req.session.role === 'student' });
     const windows = upcomingWindows(
-      slots.filter((s) => s.is_active),
+      slots.filter((s) => s.is_active !== false && s.is_active !== 0),
       { daysAhead: 21 },
     );
     res.json({ teacher_initial: initial, slots: slots.map(slotOut), windows });
@@ -238,19 +275,19 @@ miscRouter.get('/appointment-slots', requireAuth, (req, res, next) => {
   }
 });
 
-miscRouter.post('/appointment-slots', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res, next) => {
+miscRouter.post('/appointment-slots', requireRole('teacher', 'teacher_admin', 'super_admin'), async (req, res, next) => {
   try {
     const own = requireTeacherInitial(req);
     const teacherInitial =
       req.session.role === 'super_admin' ? String(req.body?.teacher_initial || own || '').trim() : own;
     if (!teacherInitial) return res.status(400).json({ error: 'No teacher profile on this account' });
-    if (!getTeacher(teacherInitial)) return res.status(400).json({ error: 'unknown teacher_initial' });
+    if (!(await getTeacher(teacherInitial))) return res.status(400).json({ error: 'unknown teacher_initial' });
 
     const { day, start_time, end_time, location, note, is_active } = slotBody(req.body);
     const invalid = validateSlotTimes(day, start_time, end_time);
     if (invalid) return res.status(400).json({ error: invalid });
 
-    const existing = teacherSlots(teacherInitial, { activeOnly: false });
+    const existing = await teacherSlots(teacherInitial, { activeOnly: false });
     const exact = existing.find(
       (s) =>
         s.day === day &&
@@ -258,13 +295,19 @@ miscRouter.post('/appointment-slots', requireRole('teacher', 'teacher_admin', 's
         normalizeClock(s.end_time) === end_time,
     );
     if (exact) {
-      run(
-        `UPDATE appointment_slots
-         SET location = ?, note = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [bind(location), bind(note), is_active, exact.id],
+      await updateOne(
+        'appointment_slots',
+        { id: exact.id },
+        {
+          $set: {
+            location: bind(location),
+            note: bind(note),
+            is_active,
+            updated_at: nowIso(),
+          },
+        },
       );
-      return res.json(slotOut(get('SELECT * FROM appointment_slots WHERE id = ?', [exact.id])));
+      return res.json(slotOut(await findOne('appointment_slots', { id: exact.id })));
     }
 
     const clash = existing.find((s) => {
@@ -283,196 +326,225 @@ miscRouter.post('/appointment-slots', requireRole('teacher', 'teacher_admin', 's
 
     const id = randomUUID();
     try {
-      run(
-        `INSERT INTO appointment_slots (id, teacher_initial, day, start_time, end_time, location, note, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, bind(teacherInitial), bind(day), bind(start_time), bind(end_time), bind(location), bind(note), is_active],
-      );
+      await insertOne('appointment_slots', {
+        id,
+        teacher_initial: bind(teacherInitial),
+        day: bind(day),
+        start_time: bind(start_time),
+        end_time: bind(end_time),
+        location: bind(location),
+        note: bind(note),
+        is_active,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      });
     } catch (err) {
       const msg = String(err?.message || err);
-      if (/UNIQUE|unique/i.test(msg)) {
-        const row = get(
-          `SELECT * FROM appointment_slots
-           WHERE teacher_initial = ? AND day = ? AND start_time = ? AND end_time = ?`,
-          [bind(teacherInitial), bind(day), bind(start_time), bind(end_time)],
-        );
+      if (/duplicate|E11000|unique/i.test(msg)) {
+        const row = await findOne('appointment_slots', {
+          teacher_initial: teacherInitial,
+          day,
+          start_time,
+          end_time,
+        });
         if (row) return res.json(slotOut(row));
       }
       throw err;
     }
-    res.status(201).json(slotOut(get('SELECT * FROM appointment_slots WHERE id = ?', [id])));
+    res.status(201).json(slotOut(await findOne('appointment_slots', { id })));
   } catch (err) {
     next(err);
   }
 });
 
-miscRouter.patch('/appointment-slots/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res) => {
-  const existing = get('SELECT * FROM appointment_slots WHERE id = ?', [req.params.id]);
-  if (!existing) return res.status(404).json({ error: 'Slot not found' });
-  const own = requireTeacherInitial(req);
-  if (req.session.role !== 'super_admin' && existing.teacher_initial !== own) {
-    return res.status(403).json({ error: 'Not your appointment slot' });
-  }
+miscRouter.patch('/appointment-slots/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), async (req, res, next) => {
+  try {
+    const existing = await findOne('appointment_slots', { id: req.params.id });
+    if (!existing) return res.status(404).json({ error: 'Slot not found' });
+    const own = requireTeacherInitial(req);
+    if (req.session.role !== 'super_admin' && existing.teacher_initial !== own) {
+      return res.status(403).json({ error: 'Not your appointment slot' });
+    }
 
-  const next = {
-    day: req.body?.day != null ? String(req.body.day).trim() : existing.day,
-    start_time: req.body?.start_time != null ? normalizeClock(req.body.start_time) : normalizeClock(existing.start_time),
-    end_time: req.body?.end_time != null ? normalizeClock(req.body.end_time) : normalizeClock(existing.end_time),
-    location: req.body?.location != null ? String(req.body.location).trim() : existing.location || '',
-    note: req.body?.note != null ? String(req.body.note).trim() : existing.note || '',
-    is_active:
-      req.body?.is_active === false || req.body?.is_active === 0
-        ? 0
-        : req.body?.is_active === true || req.body?.is_active === 1
-          ? 1
-          : existing.is_active,
-  };
-  const invalid = validateSlotTimes(next.day, next.start_time, next.end_time);
-  if (invalid) return res.status(400).json({ error: invalid });
+    const nextSlot = {
+      day: req.body?.day != null ? String(req.body.day).trim() : existing.day,
+      start_time: req.body?.start_time != null ? normalizeClock(req.body.start_time) : normalizeClock(existing.start_time),
+      end_time: req.body?.end_time != null ? normalizeClock(req.body.end_time) : normalizeClock(existing.end_time),
+      location: req.body?.location != null ? String(req.body.location).trim() : existing.location || '',
+      note: req.body?.note != null ? String(req.body.note).trim() : existing.note || '',
+      is_active:
+        req.body?.is_active === false || req.body?.is_active === 0
+          ? false
+          : req.body?.is_active === true || req.body?.is_active === 1
+            ? true
+            : existing.is_active !== false && existing.is_active !== 0,
+    };
+    const invalid = validateSlotTimes(nextSlot.day, nextSlot.start_time, nextSlot.end_time);
+    if (invalid) return res.status(400).json({ error: invalid });
 
-  run(
-    `UPDATE appointment_slots
-     SET day = ?, start_time = ?, end_time = ?, location = ?, note = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [
-      bind(next.day),
-      bind(next.start_time),
-      bind(next.end_time),
-      bind(next.location),
-      bind(next.note),
-      next.is_active,
-      req.params.id,
-    ],
-  );
-  res.json(slotOut(get('SELECT * FROM appointment_slots WHERE id = ?', [req.params.id])));
-});
-
-miscRouter.delete('/appointment-slots/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res) => {
-  const existing = get('SELECT * FROM appointment_slots WHERE id = ?', [req.params.id]);
-  if (!existing) return res.status(404).json({ error: 'Slot not found' });
-  const own = requireTeacherInitial(req);
-  if (req.session.role !== 'super_admin' && existing.teacher_initial !== own) {
-    return res.status(403).json({ error: 'Not your appointment slot' });
-  }
-  run('DELETE FROM appointment_slots WHERE id = ?', [req.params.id]);
-  res.json({ ok: true });
-});
-
-miscRouter.get('/appointments', requireAuth, (req, res) => {
-  const { role, teacherInitial, studentId } = req.session;
-  if (role === 'super_admin') {
-    return res.json(all('SELECT * FROM appointments ORDER BY date DESC'));
-  }
-  if (role === 'student') {
-    return res.json(
-      all('SELECT * FROM appointments WHERE student_id = ? ORDER BY date DESC', [bind(studentId)]),
+    await updateOne(
+      'appointment_slots',
+      { id: req.params.id },
+      {
+        $set: {
+          day: bind(nextSlot.day),
+          start_time: bind(nextSlot.start_time),
+          end_time: bind(nextSlot.end_time),
+          location: bind(nextSlot.location),
+          note: bind(nextSlot.note),
+          is_active: nextSlot.is_active,
+          updated_at: nowIso(),
+        },
+      },
     );
+    res.json(slotOut(await findOne('appointment_slots', { id: req.params.id })));
+  } catch (e) {
+    next(e);
   }
-  res.json(
-    all('SELECT * FROM appointments WHERE teacher_initial = ? ORDER BY date DESC', [
-      bind(teacherInitial),
-    ]),
-  );
 });
 
-miscRouter.post('/appointments', requireRole('student'), (req, res) => {
-  const { teacher_initial: teacherInitial, date, time, purpose, slot_id: slotId } = req.body || {};
-  if (!teacherInitial || !date || !time) {
-    return res.status(400).json({ error: 'teacher_initial, date and time are required' });
+miscRouter.delete('/appointment-slots/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), async (req, res, next) => {
+  try {
+    const existing = await findOne('appointment_slots', { id: req.params.id });
+    if (!existing) return res.status(404).json({ error: 'Slot not found' });
+    const own = requireTeacherInitial(req);
+    if (req.session.role !== 'super_admin' && existing.teacher_initial !== own) {
+      return res.status(403).json({ error: 'Not your appointment slot' });
+    }
+    await deleteOne('appointment_slots', { id: req.params.id });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
   }
-  if (!String(purpose || '').trim()) {
-    return res.status(400).json({ error: 'purpose / reason is required' });
-  }
-  const teacher = getTeacher(teacherInitial);
-  if (!teacher) {
-    return res.status(400).json({ error: 'unknown teacher_initial' });
-  }
+});
 
-  const clock = normalizeClock(time);
-  const isoDate = String(date).slice(0, 10);
-  if (!weekdayFromDate(isoDate) || !clock) {
-    return res.status(400).json({ error: 'Valid date and time are required' });
+miscRouter.get('/appointments', requireAuth, async (req, res, next) => {
+  try {
+    const { role, teacherInitial, studentId } = req.session;
+    if (role === 'super_admin') {
+      return res.json(await findMany('appointments', {}, { sort: { date: -1 } }));
+    }
+    if (role === 'student') {
+      return res.json(
+        await findMany('appointments', { student_id: studentId }, { sort: { date: -1 } }),
+      );
+    }
+    res.json(
+      await findMany(
+        'appointments',
+        { teacher_initial: teacherInitial },
+        { sort: { date: -1 } },
+      ),
+    );
+  } catch (e) {
+    next(e);
   }
+});
 
-  const published = teacherSlots(teacher.initial, { activeOnly: true });
-  if (!published.length) {
-    return res.status(400).json({
-      error: 'This teacher has not published an appointment schedule yet. Ask them to add slots in the teacher portal.',
-    });
-  }
+miscRouter.post('/appointments', requireRole('student'), async (req, res, next) => {
+  try {
+    const { teacher_initial: teacherInitial, date, time, purpose, slot_id: slotId } = req.body || {};
+    if (!teacherInitial || !date || !time) {
+      return res.status(400).json({ error: 'teacher_initial, date and time are required' });
+    }
+    if (!String(purpose || '').trim()) {
+      return res.status(400).json({ error: 'purpose / reason is required' });
+    }
+    const teacher = await getTeacher(teacherInitial);
+    if (!teacher) {
+      return res.status(400).json({ error: 'unknown teacher_initial' });
+    }
 
-  let slot = slotId
-    ? published.find((s) => s.id === slotId)
-    : matchingSlot(teacher.initial, isoDate, clock);
-  if (slotId && !slot) {
-    return res.status(400).json({ error: 'That appointment slot is not available' });
-  }
-  if (!slot || !slotCovers(slot, isoDate, clock)) {
-    return res.status(400).json({
-      error: 'Pick a time inside this teacher’s published appointment schedule',
-    });
-  }
+    const clock = normalizeClock(time);
+    const isoDate = String(date).slice(0, 10);
+    if (!weekdayFromDate(isoDate) || !clock) {
+      return res.status(400).json({ error: 'Valid date and time are required' });
+    }
 
-  if (existingBooking(teacher.initial, isoDate, clock)) {
-    return res.status(409).json({ error: 'That slot is already requested or booked' });
-  }
+    const published = await teacherSlots(teacher.initial, { activeOnly: true });
+    if (!published.length) {
+      return res.status(400).json({
+        error: 'This teacher has not published an appointment schedule yet. Ask them to add slots in the teacher portal.',
+      });
+    }
 
-  const id = randomUUID();
-  run(
-    `INSERT INTO appointments (id, teacher_initial, student_id, student_name, date, time, purpose, status, slot_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-    [
+    let slot = slotId
+      ? published.find((s) => s.id === slotId)
+      : await matchingSlot(teacher.initial, isoDate, clock);
+    if (slotId && !slot) {
+      return res.status(400).json({ error: 'That appointment slot is not available' });
+    }
+    if (!slot || !slotCovers(slot, isoDate, clock)) {
+      return res.status(400).json({
+        error: 'Pick a time inside this teacher’s published appointment schedule',
+      });
+    }
+
+    if (await existingBooking(teacher.initial, isoDate, clock)) {
+      return res.status(409).json({ error: 'That slot is already requested or booked' });
+    }
+
+    const id = randomUUID();
+    await insertOne('appointments', {
       id,
-      bind(teacher.initial),
-      bind(req.session.studentId),
-      bind(req.session.name),
-      bind(isoDate),
-      bind(clock),
-      bind(String(purpose).trim()),
-      bind(slot.id),
-    ],
-  );
-  notifyAppointmentRequest({
-    teacherInitial: teacher.initial,
-    studentName: req.session.name,
-    date: isoDate,
-    time: clock,
-    purpose: String(purpose).trim(),
-    appointmentId: id,
-  });
-  res.status(201).json(get('SELECT * FROM appointments WHERE id = ?', [id]));
+      teacher_initial: bind(teacher.initial),
+      student_id: bind(req.session.studentId),
+      student_name: bind(req.session.name),
+      date: bind(isoDate),
+      time: bind(clock),
+      purpose: bind(String(purpose).trim()),
+      status: 'pending',
+      slot_id: bind(slot.id),
+      created_at: nowIso(),
+    });
+    await notifyAppointmentRequest({
+      teacherInitial: teacher.initial,
+      studentName: req.session.name,
+      date: isoDate,
+      time: clock,
+      purpose: String(purpose).trim(),
+      appointmentId: id,
+    });
+    res.status(201).json(await findOne('appointments', { id }));
+  } catch (e) {
+    next(e);
+  }
 });
 
-miscRouter.patch('/appointments/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res) => {
-  const existing = get('SELECT * FROM appointments WHERE id = ?', [req.params.id]);
-  if (!existing) return res.status(404).json({ error: 'Appointment not found' });
-  if (req.session.role !== 'super_admin' && req.session.teacherInitial !== existing.teacher_initial) {
-    return res.status(403).json({ error: 'Not your appointment' });
-  }
-  const rawStatus = req.body?.status ?? existing.status;
-  const status = rawStatus === 'declined' ? 'rejected' : rawStatus;
-  const remarks = req.body?.teacher_remarks ?? existing.teacher_remarks;
-  if (!['pending', 'accepted', 'rejected'].includes(status)) {
-    return res.status(400).json({ error: 'invalid status' });
-  }
-  run('UPDATE appointments SET status = ?, teacher_remarks = ? WHERE id = ?', [
-    bind(status),
-    bind(remarks),
-    req.params.id,
-  ]);
+miscRouter.patch('/appointments/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), async (req, res, next) => {
+  try {
+    const existing = await findOne('appointments', { id: req.params.id });
+    if (!existing) return res.status(404).json({ error: 'Appointment not found' });
+    if (req.session.role !== 'super_admin' && req.session.teacherInitial !== existing.teacher_initial) {
+      return res.status(403).json({ error: 'Not your appointment' });
+    }
+    const rawStatus = req.body?.status ?? existing.status;
+    const status = rawStatus === 'declined' ? 'rejected' : rawStatus;
+    const remarks = req.body?.teacher_remarks ?? existing.teacher_remarks;
+    if (!['pending', 'accepted', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'invalid status' });
+    }
+    await updateOne(
+      'appointments',
+      { id: req.params.id },
+      { $set: { status: bind(status), teacher_remarks: bind(remarks) } },
+    );
 
-  // Personal notice + email so the student sees the decision outside the batch feed.
-  if (status !== existing.status) {
-    notifyAppointmentDecision({
-      studentId: existing.student_id,
-      teacherInitial: existing.teacher_initial,
-      status,
-      date: existing.date,
-      time: existing.time,
-      remarks,
-      appointmentId: existing.id,
-    });
-  }
+    // Personal notice + email so the student sees the decision outside the batch feed.
+    if (status !== existing.status) {
+      await notifyAppointmentDecision({
+        studentId: existing.student_id,
+        teacherInitial: existing.teacher_initial,
+        status,
+        date: existing.date,
+        time: existing.time,
+        remarks,
+        appointmentId: existing.id,
+      });
+    }
 
-  res.json(get('SELECT * FROM appointments WHERE id = ?', [req.params.id]));
+    res.json(await findOne('appointments', { id: req.params.id }));
+  } catch (e) {
+    next(e);
+  }
 });

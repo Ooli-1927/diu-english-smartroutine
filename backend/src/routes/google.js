@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { bind, run } from '../db.js';
+import { bind, nowIso, updateOne } from '../db.js';
 import { requireAuth } from '../auth.js';
 import {
   buildAuthUrl,
@@ -15,21 +15,25 @@ import {
 
 export const googleRouter = Router();
 
-googleRouter.get('/status', requireAuth, (req, res) => {
-  if (!canConnectGoogle(req.session)) {
-    return res.json({
-      configured: isGoogleCalendarConfigured(),
-      connected: false,
-      allowed: false,
-      email: null,
-      lastSyncAt: null,
-      lastSyncError: null,
+googleRouter.get('/status', requireAuth, async (req, res, next) => {
+  try {
+    if (!canConnectGoogle(req.session)) {
+      return res.json({
+        configured: isGoogleCalendarConfigured(),
+        connected: false,
+        allowed: false,
+        email: null,
+        lastSyncAt: null,
+        lastSyncError: null,
+      });
+    }
+    res.json({
+      ...(await getLinkStatus(req.session.id)),
+      allowed: true,
     });
+  } catch (err) {
+    next(err);
   }
-  res.json({
-    ...getLinkStatus(req.session.id),
-    allowed: true,
-  });
 });
 
 /** Returns Google OAuth URL; JWT stays in Authorization header. */
@@ -90,14 +94,22 @@ googleRouter.post('/sync', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Only students and teachers can sync Google Calendar' });
     }
     const result = await syncUserRoutine(req.session.id);
-    res.json({ ok: true, ...result, status: getLinkStatus(req.session.id) });
+    res.json({ ok: true, ...result, status: await getLinkStatus(req.session.id) });
   } catch (err) {
-    run(
-      `UPDATE google_calendar_links
-       SET last_sync_error = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = ?`,
-      [bind(String(err?.message || err).slice(0, 500)), req.session.id],
-    );
+    try {
+      await updateOne(
+        'google_calendar_links',
+        { user_id: req.session.id },
+        {
+          $set: {
+            last_sync_error: bind(String(err?.message || err).slice(0, 500)),
+            updated_at: nowIso(),
+          },
+        },
+      );
+    } catch {
+      /* ignore */
+    }
     next(err);
   }
 });
@@ -108,7 +120,7 @@ googleRouter.delete('/disconnect', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Not allowed' });
     }
     await disconnectGoogle(req.session.id);
-    res.json({ ok: true, status: getLinkStatus(req.session.id) });
+    res.json({ ok: true, status: await getLinkStatus(req.session.id) });
   } catch (err) {
     next(err);
   }

@@ -1,6 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import { google } from 'googleapis';
 import jwt from 'jsonwebtoken';
-import { all, bind, get, run } from './db.js';
+import {
+  bind,
+  deleteMany,
+  findMany,
+  findOne,
+  insertOne,
+  nowIso,
+  updateOne,
+} from './db.js';
 
 const CALENDAR_NAME = 'DIU SmartRoutine';
 const SCOPES = [
@@ -52,8 +61,9 @@ function publicAppUrl() {
   );
 }
 
-function timezone() {
-  return get('SELECT timezone FROM app_metadata LIMIT 1')?.timezone || 'Asia/Dhaka';
+async function timezone() {
+  const meta = await findOne('app_metadata', {});
+  return meta?.timezone || 'Asia/Dhaka';
 }
 
 function createOAuthClient() {
@@ -144,32 +154,23 @@ function localDateTimeIso(date, timeHm) {
   return `${y}-${m}-${day}T${h}:${min}:00`;
 }
 
-function saveLinkTokens(userId, userRole, tokens, email) {
-  const existing = get('SELECT user_id FROM google_calendar_links WHERE user_id = ?', [userId]);
+async function saveLinkTokens(userId, userRole, tokens, email) {
+  const existing = await findOne('google_calendar_links', { user_id: userId });
   const expiry = tokens.expiry_date
     ? new Date(tokens.expiry_date).toISOString()
     : null;
   const refresh = tokens.refresh_token;
   if (existing) {
-    run(
-      `UPDATE google_calendar_links
-       SET user_role = ?,
-           refresh_token = COALESCE(?, refresh_token),
-           access_token = ?,
-           expiry = ?,
-           email = COALESCE(?, email),
-           last_sync_error = NULL,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = ?`,
-      [
-        bind(userRole),
-        bind(refresh || null),
-        bind(tokens.access_token || null),
-        bind(expiry),
-        bind(email || null),
-        userId,
-      ],
-    );
+    const $set = {
+      user_role: bind(userRole),
+      access_token: bind(tokens.access_token || null),
+      expiry: bind(expiry),
+      last_sync_error: null,
+      updated_at: nowIso(),
+    };
+    if (refresh) $set.refresh_token = bind(refresh);
+    if (email) $set.email = bind(email);
+    await updateOne('google_calendar_links', { user_id: userId }, { $set });
   } else {
     if (!refresh) {
       const err = new Error(
@@ -178,24 +179,22 @@ function saveLinkTokens(userId, userRole, tokens, email) {
       err.status = 400;
       throw err;
     }
-    run(
-      `INSERT INTO google_calendar_links
-         (user_id, user_role, refresh_token, access_token, expiry, email)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        bind(userRole),
-        bind(refresh),
-        bind(tokens.access_token || null),
-        bind(expiry),
-        bind(email || null),
-      ],
-    );
+    await insertOne('google_calendar_links', {
+      id: userId,
+      user_id: userId,
+      user_role: bind(userRole),
+      refresh_token: bind(refresh),
+      access_token: bind(tokens.access_token || null),
+      expiry: bind(expiry),
+      email: bind(email || null),
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    });
   }
 }
 
 async function oauthClientForUser(userId) {
-  const link = get('SELECT * FROM google_calendar_links WHERE user_id = ?', [userId]);
+  const link = await findOne('google_calendar_links', { user_id: userId });
   if (!link) {
     const err = new Error('Google Calendar is not connected');
     err.status = 400;
@@ -208,14 +207,17 @@ async function oauthClientForUser(userId) {
     expiry_date: link.expiry ? Date.parse(link.expiry) : undefined,
   });
   client.on('tokens', (tokens) => {
-    try {
-      saveLinkTokens(userId, link.user_role, {
+    void saveLinkTokens(
+      userId,
+      link.user_role,
+      {
         ...tokens,
         refresh_token: tokens.refresh_token || link.refresh_token,
-      }, link.email);
-    } catch (e) {
+      },
+      link.email,
+    ).catch((e) => {
       console.warn('Google token refresh save failed:', e?.message || e);
-    }
+    });
   });
   return { client, link };
 }
@@ -240,62 +242,63 @@ async function ensureRoutineCalendar(calendar, userId, link) {
       requestBody: {
         summary: CALENDAR_NAME,
         description: 'Classes synced one-way from DIU SmartRoutine',
-        timeZone: timezone(),
+        timeZone: await timezone(),
       },
     });
     calendarId = created.data.id;
   }
 
-  run(
-    `UPDATE google_calendar_links
-     SET calendar_id = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ?`,
-    [bind(calendarId), userId],
+  await updateOne(
+    'google_calendar_links',
+    { user_id: userId },
+    { $set: { calendar_id: bind(calendarId), updated_at: nowIso() } },
   );
   return calendarId;
 }
 
-function entriesForUser(link) {
+async function entriesForUser(link) {
   if (link.user_role === 'student') {
-    const student = get('SELECT batch_id, section FROM students WHERE id = ?', [link.user_id]);
+    const student = await findOne('students', { id: link.user_id });
     if (!student?.batch_id) return [];
-    const rows = all(
-      `SELECT * FROM timetable_entries WHERE batch_id = ? ORDER BY day, start_time`,
-      [student.batch_id],
+    const rows = await findMany(
+      'timetable_entries',
+      { batch_id: student.batch_id },
+      { sort: { day: 1, start_time: 1 } },
     );
     if (!student.section) return rows;
-    return rows.filter((e) => !e.section || e.section === student.section || e.group_name === student.section);
+    return rows.filter(
+      (e) => !e.section || e.section === student.section || e.group_name === student.section,
+    );
   }
 
-  const teacher =
-    get('SELECT initial FROM teachers WHERE id = ?', [link.user_id]) ||
-    get('SELECT initial FROM teachers WHERE initial = ?', [link.user_id]);
+  let teacher = await findOne('teachers', { id: link.user_id });
+  if (!teacher) {
+    teacher = await findOne('teachers', { initial: link.user_id });
+  }
   if (!teacher?.initial) return [];
-  return all(
-    `SELECT * FROM timetable_entries WHERE teacher_initial = ? ORDER BY day, start_time`,
-    [teacher.initial],
+  return findMany(
+    'timetable_entries',
+    { teacher_initial: teacher.initial },
+    { sort: { day: 1, start_time: 1 } },
   );
 }
 
-function eventBodyForEntry(entry, audience) {
-  const course = get('SELECT code, title FROM courses WHERE code = ?', [entry.course_code]);
+async function eventBodyForEntry(entry, audience) {
+  const course = await findOne('courses', { code: entry.course_code });
   const title = course
     ? `${course.code} · ${course.title}`
     : entry.course_code || 'Class';
 
   const parts = [];
   if (audience === 'student') {
-    const teacher = get(
-      'SELECT name, initial FROM teachers WHERE initial = ?',
-      [entry.teacher_initial],
-    );
+    const teacher = await findOne('teachers', { initial: entry.teacher_initial });
     parts.push(
       teacher
         ? `Teacher: ${teacher.name} (${teacher.initial})`
         : `Teacher: ${entry.teacher_initial}`,
     );
   } else {
-    const batch = get('SELECT name, session FROM batches WHERE id = ?', [entry.batch_id]);
+    const batch = await findOne('batches', { id: entry.batch_id });
     parts.push(
       batch
         ? `Batch: ${batch.name}${batch.session ? ` · ${batch.session}` : ''}`
@@ -308,15 +311,14 @@ function eventBodyForEntry(entry, audience) {
   let location = 'TBA';
   if (entry.mode === 'Online') location = 'Online';
   else if (entry.room_id) {
-    const room = get('SELECT name FROM rooms WHERE id = ? OR name = ?', [
-      entry.room_id,
-      entry.room_id,
-    ]);
+    const room = await findOne('rooms', {
+      $or: [{ id: entry.room_id }, { name: entry.room_id }],
+    });
     location = room?.name || entry.room_id;
   }
 
   const when = nextOccurrenceOfDay(entry.day);
-  const tz = timezone();
+  const tz = await timezone();
   const byDay = RRULE_BYDAY[entry.day] || 'MO';
 
   return {
@@ -338,6 +340,24 @@ function eventBodyForEntry(entry, audience) {
       },
     },
   };
+}
+
+async function upsertGoogleEvent(userId, timetableEntryId, googleEventId) {
+  const id = randomUUID();
+  await updateOne(
+    'google_calendar_events',
+    { user_id: userId, timetable_entry_id: timetableEntryId },
+    {
+      $set: { google_event_id: googleEventId },
+      $setOnInsert: {
+        id,
+        _id: id,
+        user_id: userId,
+        timetable_entry_id: timetableEntryId,
+      },
+    },
+    { upsert: true },
+  );
 }
 
 export async function handleOAuthCallback(code, stateToken) {
@@ -368,7 +388,7 @@ export async function handleOAuthCallback(code, stateToken) {
         ? 'teacher_admin'
         : 'teacher';
 
-  saveLinkTokens(state.userId, role, tokens, email);
+  await saveLinkTokens(state.userId, role, tokens, email);
 
   // Initial sync (best-effort)
   try {
@@ -380,12 +400,8 @@ export async function handleOAuthCallback(code, stateToken) {
   return { userId: state.userId, role: state.role };
 }
 
-export function getLinkStatus(userId) {
-  const link = get(
-    `SELECT email, calendar_id, last_sync_at, last_sync_error, created_at
-     FROM google_calendar_links WHERE user_id = ?`,
-    [userId],
-  );
+export async function getLinkStatus(userId) {
+  const link = await findOne('google_calendar_links', { user_id: userId });
   return {
     configured: isGoogleCalendarConfigured(),
     connected: Boolean(link),
@@ -404,19 +420,16 @@ export async function syncUserRoutine(userId) {
   const calendarId = await ensureRoutineCalendar(calendar, userId, link);
   const audience = link.user_role === 'student' ? 'student' : 'teacher';
 
-  const entries = entriesForUser(link);
+  const entries = await entriesForUser(link);
   const active = entries.filter(
-    (e) => !Number(e.is_cancelled) && e.day && e.start_time && e.end_time,
+    (e) => !Boolean(e.is_cancelled) && e.day && e.start_time && e.end_time,
   );
   const activeIds = new Set(active.map((e) => e.id));
-  const mapped = all(
-    'SELECT timetable_entry_id, google_event_id FROM google_calendar_events WHERE user_id = ?',
-    [userId],
-  );
+  const mapped = await findMany('google_calendar_events', { user_id: userId });
   const mapByEntry = new Map(mapped.map((m) => [m.timetable_entry_id, m.google_event_id]));
 
   for (const entry of active) {
-    const body = eventBodyForEntry(entry, audience);
+    const body = await eventBodyForEntry(entry, audience);
     const existingId = mapByEntry.get(entry.id);
     try {
       if (existingId) {
@@ -431,30 +444,21 @@ export async function syncUserRoutine(userId) {
           requestBody: body,
         });
         const googleEventId = created.data.id;
-        run(
-          `INSERT INTO google_calendar_events (user_id, timetable_entry_id, google_event_id)
-           VALUES (?, ?, ?)
-           ON CONFLICT(user_id, timetable_entry_id) DO UPDATE SET google_event_id = excluded.google_event_id`,
-          [userId, entry.id, googleEventId],
-        );
+        await upsertGoogleEvent(userId, entry.id, googleEventId);
         mapByEntry.set(entry.id, googleEventId);
       }
     } catch (e) {
       // Stale event id — recreate
       if (existingId && (e?.code === 404 || e?.status === 404)) {
-        run(
-          'DELETE FROM google_calendar_events WHERE user_id = ? AND timetable_entry_id = ?',
-          [userId, entry.id],
-        );
+        await deleteMany('google_calendar_events', {
+          user_id: userId,
+          timetable_entry_id: entry.id,
+        });
         const created = await calendar.events.insert({
           calendarId,
           requestBody: body,
         });
-        run(
-          `INSERT INTO google_calendar_events (user_id, timetable_entry_id, google_event_id)
-           VALUES (?, ?, ?)`,
-          [userId, entry.id, created.data.id],
-        );
+        await upsertGoogleEvent(userId, entry.id, created.data.id);
       } else {
         throw e;
       }
@@ -473,26 +477,29 @@ export async function syncUserRoutine(userId) {
         console.warn('Google event delete failed:', e?.message || e);
       }
     }
-    run(
-      'DELETE FROM google_calendar_events WHERE user_id = ? AND timetable_entry_id = ?',
-      [userId, row.timetable_entry_id],
-    );
+    await deleteMany('google_calendar_events', {
+      user_id: userId,
+      timetable_entry_id: row.timetable_entry_id,
+    });
   }
 
-  run(
-    `UPDATE google_calendar_links
-     SET last_sync_at = CURRENT_TIMESTAMP,
-         last_sync_error = NULL,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE user_id = ?`,
-    [userId],
+  await updateOne(
+    'google_calendar_links',
+    { user_id: userId },
+    {
+      $set: {
+        last_sync_at: nowIso(),
+        last_sync_error: null,
+        updated_at: nowIso(),
+      },
+    },
   );
 
   return { ok: true, events: active.length };
 }
 
 export async function disconnectGoogle(userId) {
-  const link = get('SELECT * FROM google_calendar_links WHERE user_id = ?', [userId]);
+  const link = await findOne('google_calendar_links', { user_id: userId });
   if (!link) return { ok: true };
 
   if (isGoogleCalendarConfigured() && link.refresh_token) {
@@ -504,28 +511,27 @@ export async function disconnectGoogle(userId) {
     }
   }
 
-  run('DELETE FROM google_calendar_events WHERE user_id = ?', [userId]);
-  run('DELETE FROM google_calendar_links WHERE user_id = ?', [userId]);
+  await deleteMany('google_calendar_events', { user_id: userId });
+  await deleteMany('google_calendar_links', { user_id: userId });
   return { ok: true };
 }
 
-function linkedUserIdsForEntry(entry) {
+async function linkedUserIdsForEntry(entry) {
   const ids = new Set();
   if (entry?.batch_id) {
-    const students = all(
-      `SELECT s.id FROM students s
-       INNER JOIN google_calendar_links g ON g.user_id = s.id
-       WHERE s.batch_id = ?`,
-      [entry.batch_id],
-    );
-    for (const s of students) ids.add(s.id);
+    const students = await findMany('students', { batch_id: entry.batch_id });
+    const studentIds = students.map((s) => s.id);
+    if (studentIds.length) {
+      const links = await findMany('google_calendar_links', {
+        user_id: { $in: studentIds },
+      });
+      for (const link of links) ids.add(link.user_id);
+    }
   }
   if (entry?.teacher_initial) {
-    const teacher = get('SELECT id FROM teachers WHERE initial = ?', [entry.teacher_initial]);
+    const teacher = await findOne('teachers', { initial: entry.teacher_initial });
     if (teacher) {
-      const link = get('SELECT user_id FROM google_calendar_links WHERE user_id = ?', [
-        teacher.id,
-      ]);
+      const link = await findOne('google_calendar_links', { user_id: teacher.id });
       if (link) ids.add(teacher.id);
     }
   }
@@ -533,9 +539,9 @@ function linkedUserIdsForEntry(entry) {
 }
 
 /** Fire-and-forget sync for everyone linked who should see this class change. */
-export function queueSyncForEntry(entry) {
+export async function queueSyncForEntry(entry) {
   if (!isGoogleCalendarConfigured() || !entry) return;
-  const userIds = linkedUserIdsForEntry(entry);
+  const userIds = await linkedUserIdsForEntry(entry);
   if (!userIds.length) return;
 
   void Promise.all(
@@ -544,11 +550,15 @@ export function queueSyncForEntry(entry) {
         await syncUserRoutine(userId);
       } catch (e) {
         console.warn(`Google sync failed for ${userId}:`, e?.message || e);
-        run(
-          `UPDATE google_calendar_links
-           SET last_sync_error = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE user_id = ?`,
-          [bind(String(e?.message || e).slice(0, 500)), userId],
+        await updateOne(
+          'google_calendar_links',
+          { user_id: userId },
+          {
+            $set: {
+              last_sync_error: bind(String(e?.message || e).slice(0, 500)),
+              updated_at: nowIso(),
+            },
+          },
         );
       }
     }),

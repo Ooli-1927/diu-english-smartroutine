@@ -33,3 +33,8 @@ services:
         value: production
       - key: HOST
         value: "0.0.0.0"
+      # Required: MongoDB Atlas (or any reachable Mongo) URI — set in Render dashboard
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: smartroutine

@@ -11,7 +11,7 @@ import { entitiesRouter } from './routes/entities.js';
 import { timetableRouter } from './routes/timetable.js';
 import { miscRouter } from './routes/misc.js';
 import { advancedRouter } from './routes/advanced.js';
-import { dbPath, get, isEmpty, projectRoot } from './db.js';
+import { connectMongo, findOne, isEmpty, projectRoot } from './db.js';
 import { seed } from './seed.js';
 import { isMailConfigured, mailStatus } from './mail.js';
 import { initWebPush, isPushConfigured } from './push.js';
@@ -81,18 +81,23 @@ app.use(
 app.use(express.json({ limit: '5mb' }));
 app.use(authenticate);
 
-app.get('/api/health', (_req, res) => {
-  const mail = mailStatus();
-  res.json({
-    status: 'ok',
-    database: 'sqlite',
-    seeded: !isEmpty(),
-    mail: mail.mode || (isMailConfigured() ? 'ready' : 'off'),
-    push: isPushConfigured() ? 'ready' : 'off',
-    googleCalendar: isGoogleCalendarConfigured() ? 'ready' : 'off',
-    web: Boolean(WEB_DIST),
-    webDist: WEB_DIST,
-  });
+app.get('/api/health', async (_req, res, next) => {
+  try {
+    const mail = mailStatus();
+    const empty = await isEmpty();
+    res.json({
+      status: 'ok',
+      database: 'mongodb',
+      seeded: !empty,
+      mail: mail.mode || (isMailConfigured() ? 'ready' : 'off'),
+      push: isPushConfigured() ? 'ready' : 'off',
+      googleCalendar: isGoogleCalendarConfigured() ? 'ready' : 'off',
+      web: Boolean(WEB_DIST),
+      webDist: WEB_DIST,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.use('/api/auth', authRouter);
@@ -146,55 +151,67 @@ function seedFileVersion() {
   }
 }
 
-function dbSeedVersion() {
+async function dbSeedVersion() {
   try {
-    return String(get('SELECT version FROM app_metadata LIMIT 1')?.version || '');
+    const row = await findOne('app_metadata', {});
+    return String(row?.version || '');
   } catch {
     return '';
   }
 }
 
-initWebPush();
+async function boot() {
+  await connectMongo();
+  initWebPush();
 
-const wantedVersion = seedFileVersion();
-const currentVersion = isEmpty() ? '' : dbSeedVersion();
-const forceEnv = ['1', 'true', 'yes'].includes(String(process.env.FORCE_SEED || '').toLowerCase());
-const needsSeed = forceEnv || isEmpty() || (wantedVersion && wantedVersion !== currentVersion);
+  const wantedVersion = seedFileVersion();
+  const empty = await isEmpty();
+  const currentVersion = empty ? '' : await dbSeedVersion();
+  const forceEnv = ['1', 'true', 'yes'].includes(String(process.env.FORCE_SEED || '').toLowerCase());
+  const needsSeed = forceEnv || empty || (wantedVersion && wantedVersion !== currentVersion);
 
-if (needsSeed) {
-  console.log(
-    forceEnv
-      ? 'FORCE_SEED enabled — reseeding from data/seed.json'
-      : isEmpty()
-        ? 'Empty database detected — seeding from data/seed.json'
-        : `Seed version changed (${currentVersion || 'none'} → ${wantedVersion}) — reseeding`,
-  );
-  seed({ force: true });
+  if (needsSeed) {
+    console.log(
+      forceEnv
+        ? 'FORCE_SEED enabled — reseeding from data/seed.json'
+        : empty
+          ? 'Empty database detected — seeding from data/seed.json'
+          : `Seed version changed (${currentVersion || 'none'} → ${wantedVersion}) — reseeding`,
+    );
+    await seed({ force: true });
+  }
+
+  const dbName = (process.env.MONGODB_DB || 'smartroutine').trim() || 'smartroutine';
+
+  app.listen(PORT, HOST, () => {
+    console.log(`SmartRoutine listening on http://${HOST}:${PORT}`);
+    console.log(`MongoDB database: ${dbName}`);
+    console.log(
+      ORIGINS.length
+        ? `CORS origins: ${ORIGINS.join(', ')}`
+        : 'CORS origins: (none — set CORS_ORIGIN for browser clients)',
+    );
+    console.log(
+      WEB_DIST
+        ? `Web UI: serving ${WEB_DIST}`
+        : 'Web UI: not found (API only — run frontend build for combined deploy)',
+    );
+    const mail = mailStatus();
+    console.log(
+      mail.configured
+        ? `Mail: ready (${mail.mode}) from ${mail.from}`
+        : 'Mail: disabled',
+    );
+    console.log(isPushConfigured() ? 'Web Push: ready (VAPID)' : 'Web Push: disabled');
+    console.log(
+      isGoogleCalendarConfigured()
+        ? 'Google Calendar sync: ready'
+        : 'Google Calendar sync: disabled',
+    );
+  });
 }
 
-app.listen(PORT, HOST, () => {
-  console.log(`SmartRoutine listening on http://${HOST}:${PORT}`);
-  console.log(`SQLite database: ${dbPath}`);
-  console.log(
-    ORIGINS.length
-      ? `CORS origins: ${ORIGINS.join(', ')}`
-      : 'CORS origins: (none — set CORS_ORIGIN for browser clients)',
-  );
-  console.log(
-    WEB_DIST
-      ? `Web UI: serving ${WEB_DIST}`
-      : 'Web UI: not found (API only — run frontend build for combined deploy)',
-  );
-  const mail = mailStatus();
-  console.log(
-    mail.configured
-      ? `Mail: ready (${mail.mode}) from ${mail.from}`
-      : 'Mail: disabled',
-  );
-  console.log(isPushConfigured() ? 'Web Push: ready (VAPID)' : 'Web Push: disabled');
-  console.log(
-    isGoogleCalendarConfigured()
-      ? 'Google Calendar sync: ready'
-      : 'Google Calendar sync: disabled',
-  );
+boot().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

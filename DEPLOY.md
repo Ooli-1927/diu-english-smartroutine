@@ -17,11 +17,13 @@ API + database লাগে — **GitHub Pages** বা **Render Static Site** �
 2. Open: https://dashboard.render.com/blueprints  
    → **New Blueprint Instance** → connect `Ooli-1927/diu-english-smartroutine`
 3. Apply `render.yaml` (Web Service, Node 22)
-4. After deploy, Environment → set  
-   `CORS_ORIGIN` = `https://diu-english-smartroutine.onrender.com`  
-   (or whatever URL Render shows) → **Save** → Manual Deploy
+4. After deploy, Environment → set:
+   - `CORS_ORIGIN` = `https://diu-english-smartroutine.onrender.com` (or your Render URL)
+   - `MONGODB_URI` = your [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) connection string (free cluster is fine)
+   - `MONGODB_DB` = `smartroutine` (optional; this is the default)
+   → **Save** → Manual Deploy
 5. Check:
-   - `https://YOUR.onrender.com/api/health` → `"status":"ok"`
+   - `https://YOUR.onrender.com/api/health` → `"status":"ok"`, `"database":"mongodb"`
    - `https://YOUR.onrender.com/` → login page
 
 ### Manual Web Service settings
@@ -40,6 +42,8 @@ Env vars:
 | `NODE_VERSION` | `22.14.0` |
 | `JWT_SECRET` | যেকোনো লম্বা র‍্যান্ডম স্ট্রিং |
 | `CORS_ORIGIN` | Your real frontend origin (e.g. `https://YOUR.onrender.com`) — never `*` |
+| `MONGODB_URI` | Atlas connection string (required — Render has no local Mongo) |
+| `MONGODB_DB` | `smartroutine` |
 | `NODE_ENV` | `production` |
 | `WEB_DIST` | `backend/public` |
 | `HOST` | `0.0.0.0` |
@@ -54,4 +58,4 @@ Env vars:
 
 `.env` / password ফাইল আপলোড করবেন না।
 
-Free tier প্রথম ওপেনে ৩০–৬০ সেকেন্ড sleep break লাগতে পারে। SQLite free disk wipe হতে পারে — demo/preview এর জন্য ঠিক আছে।
+Free tier প্রথম ওপেনে ৩০–৬০ সেকেন্ড sleep break লাগতে পারে। Data lives in MongoDB Atlas — set `MONGODB_URI` on Render or the API will not start.

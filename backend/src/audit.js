@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { bind, run } from './db.js';
+import { bind, insertOne, nowIso } from './db.js';
 
-export function recordAudit({
+export async function recordAudit({
   session,
   action,
   entityType,
@@ -12,24 +12,21 @@ export function recordAudit({
   meta,
 }) {
   try {
-    run(
-      `INSERT INTO audit_events
-        (id, actor_role, actor_id, actor_name, action, entity_type, entity_id, summary, before_json, after_json, meta_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        randomUUID(),
-        bind(session?.role || null),
-        bind(session?.id || session?.teacherInitial || session?.studentId || null),
-        bind(session?.name || session?.username || null),
-        bind(action),
-        bind(entityType || null),
-        bind(entityId || null),
-        bind(summary || action),
-        before ? JSON.stringify(before) : null,
-        after ? JSON.stringify(after) : null,
-        meta ? JSON.stringify(meta) : null,
-      ],
-    );
+    const id = randomUUID();
+    await insertOne('audit_events', {
+      id,
+      actor_role: bind(session?.role || null),
+      actor_id: bind(session?.id || session?.teacherInitial || session?.studentId || null),
+      actor_name: bind(session?.name || session?.username || null),
+      action: bind(action),
+      entity_type: bind(entityType || null),
+      entity_id: bind(entityId || null),
+      summary: bind(summary || action),
+      before_json: before ? JSON.stringify(before) : null,
+      after_json: after ? JSON.stringify(after) : null,
+      meta_json: meta ? JSON.stringify(meta) : null,
+      created_at: nowIso(),
+    });
   } catch (err) {
     console.warn('[audit]', err.message);
   }

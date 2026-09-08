@@ -1,8 +1,9 @@
-import { all, bind, get } from './db.js';
+import { findMany, findOne, caseInsensitive } from './db.js';
 
 export const SLOT_DAYS = ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
 const JS_DAY_TO_CODE = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_ORDER = { Sat: 0, Sun: 1, Mon: 2, Tue: 3, Wed: 4, Thu: 5, Fri: 6 };
 
 export function weekdayFromDate(isoDate) {
   const raw = String(isoDate || '').slice(0, 10);
@@ -44,23 +45,20 @@ export function slotCovers(slot, date, time) {
   return t >= start && t < end;
 }
 
-export function teacherSlots(teacherInitial, { activeOnly = false } = {}) {
-  const sql = activeOnly
-    ? `SELECT * FROM appointment_slots
-       WHERE teacher_initial = ? AND is_active = 1
-       ORDER BY CASE day
-         WHEN 'Sat' THEN 0 WHEN 'Sun' THEN 1 WHEN 'Mon' THEN 2 WHEN 'Tue' THEN 3
-         WHEN 'Wed' THEN 4 WHEN 'Thu' THEN 5 ELSE 6 END, start_time`
-    : `SELECT * FROM appointment_slots
-       WHERE teacher_initial = ?
-       ORDER BY CASE day
-         WHEN 'Sat' THEN 0 WHEN 'Sun' THEN 1 WHEN 'Mon' THEN 2 WHEN 'Tue' THEN 3
-         WHEN 'Wed' THEN 4 WHEN 'Thu' THEN 5 ELSE 6 END, start_time`;
-  return all(sql, [bind(teacherInitial)]);
+export async function teacherSlots(teacherInitial, { activeOnly = false } = {}) {
+  const filter = { teacher_initial: teacherInitial };
+  if (activeOnly) filter.is_active = { $ne: false };
+  const rows = await findMany('appointment_slots', filter);
+  return rows.sort((a, b) => {
+    const d = (DAY_ORDER[a.day] ?? 9) - (DAY_ORDER[b.day] ?? 9);
+    if (d) return d;
+    return String(a.start_time).localeCompare(String(b.start_time));
+  });
 }
 
-export function matchingSlot(teacherInitial, date, time) {
-  return teacherSlots(teacherInitial, { activeOnly: true }).find((s) => slotCovers(s, date, time)) || null;
+export async function matchingSlot(teacherInitial, date, time) {
+  const slots = await teacherSlots(teacherInitial, { activeOnly: true });
+  return slots.find((s) => slotCovers(s, date, time)) || null;
 }
 
 export function slotOut(row) {
@@ -73,19 +71,19 @@ export function slotOut(row) {
     end_time: normalizeClock(row.end_time),
     location: row.location || '',
     note: row.note || '',
-    is_active: Boolean(row.is_active),
+    is_active: row.is_active !== false && row.is_active !== 0,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
-export function existingBooking(teacherInitial, date, time, exceptId = null) {
-  const rows = all(
-    `SELECT id FROM appointments
-     WHERE teacher_initial = ? AND date = ? AND time = ?
-       AND status IN ('pending', 'accepted')`,
-    [bind(teacherInitial), bind(date), bind(normalizeClock(time))],
-  );
+export async function existingBooking(teacherInitial, date, time, exceptId = null) {
+  const rows = await findMany('appointments', {
+    teacher_initial: teacherInitial,
+    date,
+    time: normalizeClock(time),
+    status: { $in: ['pending', 'accepted'] },
+  });
   return rows.find((r) => r.id !== exceptId) || null;
 }
 
@@ -116,9 +114,8 @@ export function upcomingWindows(slots, { daysAhead = 21 } = {}) {
   return out;
 }
 
-export function getTeacher(initial) {
-  return get(
-    'SELECT initial, name, email FROM teachers WHERE lower(initial) = lower(?)',
-    [String(initial || '').trim()],
-  );
+export async function getTeacher(initial) {
+  return findOne('teachers', caseInsensitive('initial', String(initial || '').trim()), {
+    projection: { initial: 1, name: 1, email: 1 },
+  });
 }

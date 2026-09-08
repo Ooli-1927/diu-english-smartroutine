@@ -10,31 +10,39 @@ import {
 
 export const authRouter = Router();
 
-authRouter.post('/login', (req, res) => {
-  const { username, password } = req.body || {};
-  const session = authenticateCredentials(username, password);
-  if (!session) return res.status(401).json({ error: 'Invalid username or password' });
-  res.json({ token: signToken(session), session: enrichSession(session) });
-});
-
-authRouter.get('/me', requireAuth, (req, res) => {
-  res.json({ session: enrichSession(req.session) });
-});
-
-authRouter.put('/me/profile-pic', requireAuth, (req, res, next) => {
+authRouter.post('/login', async (req, res, next) => {
   try {
-    const pic = req.body?.profile_pic ?? null;
-    updateOwnProfilePic(req.session, pic);
-    res.json({ session: enrichSession(req.session) });
+    const { username, password } = req.body || {};
+    const session = await authenticateCredentials(username, password);
+    if (!session) return res.status(401).json({ error: 'Invalid username or password' });
+    res.json({ token: signToken(session), session: await enrichSession(session) });
   } catch (err) {
     next(err);
   }
 });
 
-authRouter.post('/change-password', requireAuth, (req, res, next) => {
-  const { currentPassword, newPassword } = req.body || {};
+authRouter.get('/me', requireAuth, async (req, res, next) => {
   try {
-    changeOwnPassword(req.session, currentPassword, newPassword);
+    res.json({ session: await enrichSession(req.session) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.put('/me/profile-pic', requireAuth, async (req, res, next) => {
+  try {
+    const pic = req.body?.profile_pic ?? null;
+    await updateOwnProfilePic(req.session, pic);
+    res.json({ session: await enrichSession(req.session) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post('/change-password', requireAuth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    await changeOwnPassword(req.session, currentPassword, newPassword);
     res.json({ ok: true });
   } catch (err) {
     next(err);

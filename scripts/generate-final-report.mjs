@@ -262,7 +262,7 @@ const children = [
     "DIU SmartRoutine is a full-stack campus class-scheduling platform built for the Department of English at Daffodil International University. It replaces static spreadsheet and PDF routines with live web portals for Students, Teachers, and the Chairman (super admin). The system supports conflict-aware timetable editing, constraint-based auto-generation, class cancel/reschedule with notices, free-room lookup, teacher appointments, analytics, PDF import/export, calendar (.ics) export, optional email (SMTP), Web Push notifications, Google Calendar sync, and Progressive Web App (PWA) install.",
   ),
   p(
-    "The monorepo ships a React (Vite + TypeScript) frontend and an Express 5 + SQLite API. On first boot the API auto-seeds Summer 2026 English department data (faculty, courses, rooms, batches, demo students, and ~293 class entries). This report documents every major feature and functionality from A to Z for client delivery.",
+    "The monorepo ships a React (Vite + TypeScript) frontend and an Express 5 + MongoDB API. On first boot the API auto-seeds Summer 2026 English department data (faculty, courses, rooms, batches, demo students, and ~327 class entries). This report documents every major feature and functionality from A to Z for client delivery.",
   ),
 
   h1("2. Project Objectives"),
@@ -278,7 +278,7 @@ const children = [
   h2("3.1 Architecture"),
   bullet("Frontend (frontend): React 19 SPA, Vite, React Router, CSS design system, PWA."),
   bullet("Backend (backend): Node.js 22.5+, Express 5, JWT auth, bcrypt passwords."),
-  bullet("Database: SQLite file (backend/data/smartroutine.db) with auto-seed."),
+  bullet("Database: MongoDB (MONGODB_URI / MONGODB_DB in backend/.env) with auto-seed."),
   bullet("Dev: API on port 4000, Vite typically on 5173 (or next free port)."),
   bullet("Production: root npm start serves API + built static web (Render-ready)."),
 
@@ -290,7 +290,7 @@ const children = [
       ["UI / icons", "Custom CSS (DIU campus palette), Lucide icons"],
       ["PDF / calendar", "jsPDF, pdfjs, ics"],
       ["Backend", "Node.js ≥22.5, Express 5"],
-      ["Database", "SQLite (node:sqlite)"],
+      ["Database", "MongoDB (official driver)"],
       ["Auth", "JWT (jsonwebtoken), bcryptjs"],
       ["Email (optional)", "Nodemailer / Gmail SMTP, FormSubmit fallback"],
       ["Push (optional)", "web-push + VAPID"],
@@ -661,7 +661,7 @@ const children = [
 
   h1("17. Deliverables Included with This System"),
   bullet("frontend — Frontend application source."),
-  bullet("backend — Backend API + SQLite seed."),
+  bullet("backend — Backend API + MongoDB seed."),
   bullet("SETUP.md — Setup and optional integrations guide."),
   bullet("UPLOAD-AND-RUN.txt — Quick upload / run notes."),
   bullet("scripts/ — Smoke, delivery E2E, seed audit, repair helpers."),

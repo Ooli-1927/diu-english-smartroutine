@@ -2,7 +2,21 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { db, projectRoot, run, get, all, transaction, isEmpty, bind } from './db.js';
+import {
+  projectRoot,
+  findMany,
+  findOne,
+  insertOne,
+  insertMany,
+  deleteMany,
+  transaction,
+  isEmpty,
+  bind,
+  connectMongo,
+  closeMongo,
+  COLLECTIONS,
+  caseInsensitive,
+} from './db.js';
 import {
   CHAIRMAN_PASSWORD,
   CHAIRMAN_USERNAME,
@@ -16,6 +30,7 @@ const SEED_FILE = join(projectRoot, 'data', 'seed.json');
 /** Monorepo root (parent of backend/) — local-only, gitignored. */
 const CREDENTIALS_FILE = join(projectRoot, '..', 'credentials.local.txt');
 const HASH_ROUNDS = 10;
+const DEMO_SECTIONS = ['A', 'B', 'C', 'D'];
 
 /** Extra super-admin accounts to ensure exist. */
 const DEMO_ADMIN_ACCOUNTS = [
@@ -27,21 +42,10 @@ function hash(plain) {
   return bcrypt.hashSync(plain, HASH_ROUNDS);
 }
 
-function wipe() {
-  const tables = [
-    'notifications',
-    'appointments',
-    'appointment_slots',
-    'timetable_entries',
-    'students',
-    'admins',
-    'teachers',
-    'courses',
-    'rooms',
-    'batches',
-    'app_metadata',
-  ];
-  for (const t of tables) db.exec(`DELETE FROM ${t}`);
+async function wipe() {
+  for (const name of COLLECTIONS) {
+    await deleteMany(name, {});
+  }
 }
 
 function formatCredentialLine(row) {
@@ -97,142 +101,154 @@ function printCredentials(credentials) {
   console.log('');
 }
 
-export function seed({ force = false, quiet = false } = {}) {
-  if (!force && !isEmpty()) {
+export async function seed({ force = false, quiet = false } = {}) {
+  if (!force && !(await isEmpty())) {
     if (!quiet) console.log('Database already seeded — skipping (use --force to reseed).');
     return { skipped: true };
   }
 
   const raw = JSON.parse(readFileSync(SEED_FILE, 'utf8'));
-  const stats = { batches: 0, courses: 0, rooms: 0, teachers: 0, students: 0, entries: 0, admins: 0, skippedEntries: 0 };
+  const stats = {
+    batches: 0,
+    courses: 0,
+    rooms: 0,
+    teachers: 0,
+    students: 0,
+    entries: 0,
+    admins: 0,
+    skippedEntries: 0,
+  };
   const credentials = [];
 
-  transaction(() => {
-    wipe();
+  await transaction(async () => {
+    await wipe();
 
     const meta = raw.meta || {};
-    run(
-      `INSERT INTO app_metadata (id, version, institution_name, department, academic_year, timezone)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        randomUUID(),
-        bind(meta.version || '2.0.0'),
-        bind(meta.university),
-        bind(meta.department),
-        bind('2025-2026'),
-        bind(meta.tz || 'Asia/Dhaka'),
-      ],
-    );
+    const metaId = randomUUID();
+    await insertOne('app_metadata', {
+      id: metaId,
+      version: bind(meta.version || '2.0.0'),
+      institution_name: bind(meta.university),
+      department: bind(meta.department),
+      academic_year: bind('2025-2026'),
+      timezone: bind(meta.tz || 'Asia/Dhaka'),
+    });
 
-    for (const b of raw.batches || []) {
-      run('INSERT INTO batches (id, name, session) VALUES (?, ?, ?)', [
-        bind(b.id),
-        bind(b.name),
-        bind(b.session),
-      ]);
-      stats.batches += 1;
+    const batchDocs = (raw.batches || []).map((b) => ({
+      id: b.id,
+      name: bind(b.name),
+      session: bind(b.session),
+    }));
+    if (batchDocs.length) {
+      await insertMany('batches', batchDocs);
+      stats.batches = batchDocs.length;
     }
 
-    for (const c of raw.courses || []) {
-      run('INSERT INTO courses (id, code, title) VALUES (?, ?, ?)', [
-        randomUUID(),
-        bind(c.code),
-        bind(c.title),
-      ]);
-      stats.courses += 1;
+    const courseDocs = (raw.courses || []).map((c) => ({
+      id: randomUUID(),
+      code: bind(c.code),
+      title: bind(c.title),
+    }));
+    if (courseDocs.length) {
+      await insertMany('courses', courseDocs);
+      stats.courses = courseDocs.length;
     }
 
-    for (const r of raw.rooms || []) {
-      run('INSERT INTO rooms (id, name) VALUES (?, ?)', [
-        bind(r.id || r.name),
-        bind(r.name || r.id),
-      ]);
-      stats.rooms += 1;
+    const roomDocs = (raw.rooms || []).map((r) => ({
+      id: r.id || r.name,
+      name: bind(r.name || r.id),
+    }));
+    if (roomDocs.length) {
+      await insertMany('rooms', roomDocs);
+      stats.rooms = roomDocs.length;
     }
 
+    const teacherDocs = [];
     for (const t of raw.teachers || []) {
       const initial = String(t.initial).toUpperCase();
       const password = teacherInitialPassword(initial);
-      run(
-        `INSERT INTO teachers (id, name, initial, designation, phone, email, home_department, profile_pic, password_hash, has_changed_password)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-        [
-          bind(t.id || randomUUID()),
-          bind(t.name),
-          bind(initial),
-          bind(t.designation),
-          bind(t.phone),
-          bind(t.email),
-          bind(t.home_department),
-          bind(t.profile_pic),
-          hash(password),
-        ],
-      );
+      teacherDocs.push({
+        id: t.id || randomUUID(),
+        name: bind(t.name),
+        initial: bind(initial),
+        designation: bind(t.designation),
+        phone: bind(t.phone),
+        email: bind(t.email),
+        home_department: bind(t.home_department),
+        profile_pic: bind(t.profile_pic),
+        password_hash: hash(password),
+        has_changed_password: false,
+      });
       credentials.push({ role: 'teacher', login: initial, password, name: t.name });
-      stats.teachers += 1;
+    }
+    if (teacherDocs.length) {
+      await insertMany('teachers', teacherDocs);
+      stats.teachers = teacherDocs.length;
     }
 
     const seededStudents = raw.students || [];
+    const studentDocs = [];
     if (seededStudents.length) {
       for (const s of seededStudents) {
         const password = STUDENT_INITIAL_PASSWORD;
-        run(
-          `INSERT INTO students (id, student_id, name, batch_id, section, email, phone, password_hash, has_changed_password)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-          [
-            bind(s.id || randomUUID()),
-            bind(s.student_id),
-            bind(s.name),
-            bind(s.batch_id),
-            bind(s.section || null),
-            bind(s.email),
-            bind(s.phone),
-            hash(password),
-          ],
-        );
+        studentDocs.push({
+          id: s.id || randomUUID(),
+          student_id: bind(s.student_id),
+          name: bind(s.name),
+          batch_id: bind(s.batch_id),
+          section: bind(s.section || null),
+          email: bind(s.email),
+          phone: bind(s.phone),
+          password_hash: hash(password),
+          has_changed_password: false,
+        });
         credentials.push({
           role: 'student',
           login: s.email || s.student_id,
           password,
           name: s.name,
         });
-        stats.students += 1;
       }
     } else {
-      const batches = all('SELECT id, name FROM batches ORDER BY rowid');
+      const batches = await findMany('batches', {}, { sort: { name: 1 } });
       const studentHash = hash(STUDENT_INITIAL_PASSWORD);
+      let demoIndex = 0;
       batches.forEach((batch, bi) => {
         for (let n = 1; n <= 5; n += 1) {
           const email = `student${bi}${n}@diu.demo`;
-          run(
-            `INSERT INTO students (id, student_id, name, batch_id, email, phone, password_hash, has_changed_password)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-            [
-              randomUUID(),
-              `2102${bi}${String(n).padStart(2, '0')}`,
-              `Demo Student ${bi}${n}`,
-              batch.id,
-              email,
-              null,
-              studentHash,
-            ],
-          );
+          const section = DEMO_SECTIONS[demoIndex % DEMO_SECTIONS.length];
+          demoIndex += 1;
+          studentDocs.push({
+            id: randomUUID(),
+            student_id: `2102${bi}${String(n).padStart(2, '0')}`,
+            name: `Demo Student ${bi}${n}`,
+            batch_id: batch.id,
+            section,
+            email,
+            phone: null,
+            password_hash: studentHash,
+            has_changed_password: false,
+          });
           credentials.push({
             role: 'student',
             login: email,
             password: STUDENT_INITIAL_PASSWORD,
             name: `Demo Student ${bi}${n}`,
           });
-          stats.students += 1;
         }
       });
     }
+    if (studentDocs.length) {
+      await insertMany('students', studentDocs);
+      stats.students = studentDocs.length;
+    }
 
-    const knownBatches = new Set(all('SELECT id FROM batches').map((r) => r.id));
-    const knownTeachers = new Set(all('SELECT initial FROM teachers').map((r) => r.initial));
-    const knownCourses = new Set(all('SELECT code FROM courses').map((r) => r.code));
-    const knownRooms = new Set(all('SELECT id FROM rooms').map((r) => r.id));
+    const knownBatches = new Set((await findMany('batches', {})).map((r) => r.id));
+    const knownTeachers = new Set((await findMany('teachers', {})).map((r) => r.initial));
+    const knownCourses = new Set((await findMany('courses', {})).map((r) => r.code));
+    const knownRooms = new Set((await findMany('rooms', {})).map((r) => r.id));
 
+    const entryDocs = [];
     for (const e of raw.timetable || []) {
       const roomId = e.room_id && knownRooms.has(e.room_id) ? e.room_id : null;
       if (
@@ -243,44 +259,43 @@ export function seed({ force = false, quiet = false } = {}) {
         stats.skippedEntries += 1;
         continue;
       }
-      run(
-        `INSERT INTO timetable_entries
-          (id, day, batch_id, teacher_initial, course_code, type, section, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          randomUUID(),
-          bind(e.day),
-          bind(e.batch_id),
-          bind(e.teacher_initial),
-          bind(e.course_code),
-          bind(e.type || 'Lecture'),
-          bind(e.section ?? e.group ?? e.group_name),
-          bind(e.group ?? e.group_name ?? e.section),
-          roomId,
-          bind(e.mode || 'Onsite'),
-          bind(String(e.start ?? e.start_time).slice(0, 5)),
-          bind(String(e.end ?? e.end_time).slice(0, 5)),
-          bind(e.is_cancelled),
-          bind(e.cancellation_reason),
-        ],
-      );
-      stats.entries += 1;
+      entryDocs.push({
+        id: randomUUID(),
+        day: bind(e.day),
+        batch_id: bind(e.batch_id),
+        teacher_initial: bind(e.teacher_initial),
+        course_code: bind(e.course_code),
+        type: bind(e.type || 'Lecture'),
+        section: bind(e.section ?? e.group ?? e.group_name),
+        group_name: bind(e.group ?? e.group_name ?? e.section),
+        room_id: roomId,
+        mode: bind(e.mode || 'Onsite'),
+        start_time: bind(String(e.start ?? e.start_time).slice(0, 5)),
+        end_time: bind(String(e.end ?? e.end_time).slice(0, 5)),
+        is_cancelled: Boolean(e.is_cancelled),
+        cancellation_reason: bind(e.cancellation_reason),
+      });
+    }
+    if (entryDocs.length) {
+      // Chunk large timetable inserts
+      const CHUNK = 200;
+      for (let i = 0; i < entryDocs.length; i += CHUNK) {
+        await insertMany('timetable_entries', entryDocs.slice(i, i + CHUNK));
+      }
+      stats.entries = entryDocs.length;
     }
 
     for (const a of raw.admins || []) {
       const username = normalizeAdminUsername(a.username);
       const type = a.type || 'teacher_admin';
       const password = adminInitialPassword(username, type, a.teacher_initial);
-      run(
-        'INSERT INTO admins (id, username, password_hash, type, teacher_initial) VALUES (?, ?, ?, ?, ?)',
-        [
-          bind(a.id || randomUUID()),
-          bind(username),
-          hash(password),
-          bind(type),
-          bind(a.teacher_initial),
-        ],
-      );
+      await insertOne('admins', {
+        id: a.id || randomUUID(),
+        username: bind(username),
+        password_hash: hash(password),
+        type: bind(type),
+        teacher_initial: bind(a.teacher_initial),
+      });
       credentials.push({
         role: type,
         login: username,
@@ -291,11 +306,14 @@ export function seed({ force = false, quiet = false } = {}) {
     }
 
     // Ensure Chairman exists even if seed.json omitted it.
-    if (!get('SELECT id FROM admins WHERE lower(username) = lower(?)', [CHAIRMAN_USERNAME])) {
-      run(
-        'INSERT INTO admins (id, username, password_hash, type, teacher_initial) VALUES (?, ?, ?, ?, NULL)',
-        [randomUUID(), CHAIRMAN_USERNAME, hash(CHAIRMAN_PASSWORD), 'super_admin'],
-      );
+    if (!(await findOne('admins', caseInsensitive('username', CHAIRMAN_USERNAME)))) {
+      await insertOne('admins', {
+        id: randomUUID(),
+        username: CHAIRMAN_USERNAME,
+        password_hash: hash(CHAIRMAN_PASSWORD),
+        type: 'super_admin',
+        teacher_initial: null,
+      });
       credentials.push({
         role: 'super_admin',
         login: CHAIRMAN_USERNAME,
@@ -306,13 +324,16 @@ export function seed({ force = false, quiet = false } = {}) {
     }
 
     for (const a of DEMO_ADMIN_ACCOUNTS) {
-      const exists = get('SELECT id FROM admins WHERE lower(username) = lower(?)', [a.username]);
+      const exists = await findOne('admins', caseInsensitive('username', a.username));
       if (exists) continue;
       const password = CHAIRMAN_PASSWORD;
-      run(
-        'INSERT INTO admins (id, username, password_hash, type, teacher_initial) VALUES (?, ?, ?, ?, NULL)',
-        [randomUUID(), a.username, hash(password), a.type],
-      );
+      await insertOne('admins', {
+        id: randomUUID(),
+        username: a.username,
+        password_hash: hash(password),
+        type: a.type,
+        teacher_initial: null,
+      });
       credentials.push({ role: a.type, login: a.username, password, name: a.username });
       stats.admins += 1;
     }
@@ -326,8 +347,18 @@ export function seed({ force = false, quiet = false } = {}) {
   return { ...stats, credentials };
 }
 
-const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop());
+const isMain =
+  process.argv[1] &&
+  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop());
+
 if (isMain) {
   const force = process.argv.includes('--force');
-  seed({ force });
+  const { config } = await import('dotenv');
+  config({ path: join(projectRoot, '.env') });
+  try {
+    await connectMongo();
+    await seed({ force });
+  } finally {
+    await closeMongo();
+  }
 }

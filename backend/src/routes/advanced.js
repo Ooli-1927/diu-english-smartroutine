@@ -1,6 +1,16 @@
 import { Router } from 'express';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { all, bind, get, run, transaction } from '../db.js';
+import {
+  bind,
+  deleteMany,
+  findMany,
+  findOne,
+  insertOne,
+  nowIso,
+  transaction,
+  updateMany,
+  updateOne,
+} from '../db.js';
 import { requireAuth, requireRole } from '../auth.js';
 import { findConflicts, conflictsWith } from '../conflicts.js';
 import { entryOut } from '../shape.js';
@@ -10,10 +20,6 @@ import { announce } from '../notify.js';
 
 export const advancedRouter = Router();
 const adminOnly = requireRole('super_admin');
-
-function nowIso() {
-  return new Date().toISOString();
-}
 
 function minutesNow(d = new Date()) {
   return d.getHours() * 60 + d.getMinutes();
@@ -28,655 +34,776 @@ function todayCode(d = new Date()) {
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
 }
 
+function parseJsonField(value) {
+  if (value == null) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 /* ── Audit ─────────────────────────────────────────────── */
-advancedRouter.get('/audit', adminOnly, (req, res) => {
-  const limit = Math.min(200, Number(req.query.limit) || 80);
-  const rows = all(
-    `SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?`,
-    [limit],
-  );
-  res.json(
-    rows.map((r) => ({
-      ...r,
-      before: r.before_json ? JSON.parse(r.before_json) : null,
-      after: r.after_json ? JSON.parse(r.after_json) : null,
-      meta: r.meta_json ? JSON.parse(r.meta_json) : null,
-    })),
-  );
+advancedRouter.get('/audit', adminOnly, async (req, res, next) => {
+  try {
+    const limit = Math.min(200, Number(req.query.limit) || 80);
+    const rows = await findMany(
+      'audit_events',
+      {},
+      { sort: { created_at: -1 }, limit },
+    );
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        before: parseJsonField(r.before_json),
+        after: parseJsonField(r.after_json),
+        meta: parseJsonField(r.meta_json),
+      })),
+    );
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* ── Semesters / snapshots ─────────────────────────────── */
-advancedRouter.get('/semesters', adminOnly, (_req, res) => {
-  const semesters = all('SELECT * FROM semesters ORDER BY created_at DESC');
-  const snapshots = all(
-    `SELECT id, semester_id, label, entry_count, created_by, created_at
-     FROM timetable_snapshots ORDER BY created_at DESC LIMIT 50`,
-  );
-  res.json({ semesters, snapshots });
+advancedRouter.get('/semesters', adminOnly, async (_req, res, next) => {
+  try {
+    const semesters = await findMany('semesters', {}, { sort: { created_at: -1 } });
+    const snapshots = await findMany(
+      'timetable_snapshots',
+      {},
+      { sort: { created_at: -1 }, limit: 50 },
+    );
+    res.json({
+      semesters,
+      snapshots: snapshots.map((s) => ({
+        id: s.id,
+        semester_id: s.semester_id,
+        label: s.label,
+        entry_count: s.entry_count,
+        created_by: s.created_by,
+        created_at: s.created_at,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
-advancedRouter.post('/semesters', adminOnly, (req, res) => {
-  const id = randomUUID();
-  const label = String(req.body?.label || '').trim();
-  if (!label) return res.status(400).json({ error: 'label required' });
-  run(
-    `INSERT INTO semesters (id, label, academic_year, is_active, notes)
-     VALUES (?, ?, ?, 0, ?)`,
-    [id, label, bind(req.body?.academic_year || null), bind(req.body?.notes || null)],
-  );
-  recordAudit({
-    session: req.session,
-    action: 'semester.create',
-    entityType: 'semester',
-    entityId: id,
-    summary: `Created semester ${label}`,
-  });
-  res.status(201).json(get('SELECT * FROM semesters WHERE id = ?', [id]));
-});
-
-advancedRouter.post('/semesters/:id/snapshot', adminOnly, (req, res) => {
-  const sem = get('SELECT * FROM semesters WHERE id = ?', [req.params.id]);
-  if (!sem) return res.status(404).json({ error: 'Semester not found' });
-  const entries = all('SELECT * FROM timetable_entries');
-  const id = randomUUID();
-  const label = String(req.body?.label || `${sem.label} snapshot`).trim();
-  run(
-    `INSERT INTO timetable_snapshots (id, semester_id, label, entry_count, payload_json, created_by)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
+advancedRouter.post('/semesters', adminOnly, async (req, res, next) => {
+  try {
+    const id = randomUUID();
+    const label = String(req.body?.label || '').trim();
+    if (!label) return res.status(400).json({ error: 'label required' });
+    await insertOne('semesters', {
       id,
-      sem.id,
       label,
-      entries.length,
-      JSON.stringify(entries),
-      bind(req.session?.username || req.session?.id),
-    ],
-  );
-  recordAudit({
-    session: req.session,
-    action: 'semester.snapshot',
-    entityType: 'snapshot',
-    entityId: id,
-    summary: `Snapshot "${label}" (${entries.length} classes)`,
-  });
-  res.status(201).json(get(
-    `SELECT id, semester_id, label, entry_count, created_by, created_at FROM timetable_snapshots WHERE id = ?`,
-    [id],
-  ));
+      academic_year: bind(req.body?.academic_year || null),
+      is_active: false,
+      notes: bind(req.body?.notes || null),
+      created_at: nowIso(),
+    });
+    await recordAudit({
+      session: req.session,
+      action: 'semester.create',
+      entityType: 'semester',
+      entityId: id,
+      summary: `Created semester ${label}`,
+    });
+    res.status(201).json(await findOne('semesters', { id }));
+  } catch (e) {
+    next(e);
+  }
 });
 
-advancedRouter.post('/semesters/snapshots/:id/restore', adminOnly, (req, res) => {
-  const snap = get('SELECT * FROM timetable_snapshots WHERE id = ?', [req.params.id]);
-  if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
-  const entries = JSON.parse(snap.payload_json || '[]');
-  transaction(() => {
-    run('DELETE FROM timetable_entries');
-    for (const e of entries) {
-      run(
-        `INSERT INTO timetable_entries
-          (id, day, batch_id, teacher_initial, course_code, type, group_name, room_id, mode,
-           start_time, end_time, is_cancelled, cancellation_reason, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          e.id || randomUUID(),
-          e.day,
-          e.batch_id,
-          e.teacher_initial,
-          e.course_code,
-          e.type,
-          bind(e.group_name),
-          bind(e.room_id),
-          e.mode,
-          e.start_time,
-          e.end_time,
-          bind(e.is_cancelled),
-          bind(e.cancellation_reason),
-          bind(e.created_at || nowIso()),
-          nowIso(),
-        ],
-      );
-    }
-  });
-  recordAudit({
-    session: req.session,
-    action: 'semester.restore',
-    entityType: 'snapshot',
-    entityId: snap.id,
-    summary: `Restored snapshot "${snap.label}" (${entries.length} classes)`,
-  });
-  res.json({ ok: true, restored: entries.length, label: snap.label });
+advancedRouter.post('/semesters/:id/snapshot', adminOnly, async (req, res, next) => {
+  try {
+    const sem = await findOne('semesters', { id: req.params.id });
+    if (!sem) return res.status(404).json({ error: 'Semester not found' });
+    const entries = await findMany('timetable_entries', {});
+    const id = randomUUID();
+    const label = String(req.body?.label || `${sem.label} snapshot`).trim();
+    await insertOne('timetable_snapshots', {
+      id,
+      semester_id: sem.id,
+      label,
+      entry_count: entries.length,
+      payload_json: JSON.stringify(entries),
+      created_by: bind(req.session?.username || req.session?.id),
+      created_at: nowIso(),
+    });
+    await recordAudit({
+      session: req.session,
+      action: 'semester.snapshot',
+      entityType: 'snapshot',
+      entityId: id,
+      summary: `Snapshot "${label}" (${entries.length} classes)`,
+    });
+    res.status(201).json({
+      id,
+      semester_id: sem.id,
+      label,
+      entry_count: entries.length,
+      created_by: req.session?.username || req.session?.id,
+      created_at: (await findOne('timetable_snapshots', { id }))?.created_at,
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
-advancedRouter.post('/semesters/:id/activate', adminOnly, (req, res) => {
-  const sem = get('SELECT * FROM semesters WHERE id = ?', [req.params.id]);
-  if (!sem) return res.status(404).json({ error: 'Semester not found' });
-  transaction(() => {
-    run('UPDATE semesters SET is_active = 0');
-    run('UPDATE semesters SET is_active = 1 WHERE id = ?', [sem.id]);
-  });
-  recordAudit({
-    session: req.session,
-    action: 'semester.activate',
-    entityType: 'semester',
-    entityId: sem.id,
-    summary: `Activated ${sem.label}`,
-  });
-  res.json({ ok: true, semester: get('SELECT * FROM semesters WHERE id = ?', [sem.id]) });
+advancedRouter.post('/semesters/snapshots/:id/restore', adminOnly, async (req, res, next) => {
+  try {
+    const snap = await findOne('timetable_snapshots', { id: req.params.id });
+    if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
+    const entries = parseJsonField(snap.payload_json) || [];
+    await transaction(async () => {
+      await deleteMany('timetable_entries', {});
+      for (const e of entries) {
+        const id = e.id || randomUUID();
+        await insertOne('timetable_entries', {
+          id,
+          day: e.day,
+          batch_id: e.batch_id,
+          teacher_initial: e.teacher_initial,
+          course_code: e.course_code,
+          type: e.type,
+          section: bind(e.section || e.group_name || null),
+          group_name: bind(e.group_name),
+          room_id: bind(e.room_id),
+          mode: e.mode,
+          start_time: e.start_time,
+          end_time: e.end_time,
+          is_cancelled: Boolean(e.is_cancelled),
+          cancellation_reason: bind(e.cancellation_reason),
+          created_at: bind(e.created_at || nowIso()),
+          updated_at: nowIso(),
+        });
+      }
+    });
+    await recordAudit({
+      session: req.session,
+      action: 'semester.restore',
+      entityType: 'snapshot',
+      entityId: snap.id,
+      summary: `Restored snapshot "${snap.label}" (${entries.length} classes)`,
+    });
+    res.json({ ok: true, restored: entries.length, label: snap.label });
+  } catch (e) {
+    next(e);
+  }
+});
+
+advancedRouter.post('/semesters/:id/activate', adminOnly, async (req, res, next) => {
+  try {
+    const sem = await findOne('semesters', { id: req.params.id });
+    if (!sem) return res.status(404).json({ error: 'Semester not found' });
+    await transaction(async () => {
+      await updateMany('semesters', {}, { $set: { is_active: false } });
+      await updateOne('semesters', { id: sem.id }, { $set: { is_active: true } });
+    });
+    await recordAudit({
+      session: req.session,
+      action: 'semester.activate',
+      entityType: 'semester',
+      entityId: sem.id,
+      summary: `Activated ${sem.label}`,
+    });
+    res.json({ ok: true, semester: await findOne('semesters', { id: sem.id }) });
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* ── What-if simulator ─────────────────────────────────── */
-advancedRouter.post('/simulate/what-if', adminOnly, (req, res) => {
-  const live = all('SELECT * FROM timetable_entries').map(entryOut);
-  const patch = req.body?.patch || {};
-  const entryId = patch.entryId || patch.id;
-  let simulated = live.map((e) => ({ ...e }));
+advancedRouter.post('/simulate/what-if', adminOnly, async (req, res, next) => {
+  try {
+    const live = (await findMany('timetable_entries', {})).map(entryOut);
+    const patch = req.body?.patch || {};
+    const entryId = patch.entryId || patch.id;
+    let simulated = live.map((e) => ({ ...e }));
 
-  if (entryId) {
-    simulated = simulated.map((e) => {
-      if (e.id !== entryId) return e;
-      return {
-        ...e,
-        ...('day' in patch ? { day: patch.day } : {}),
-        ...('start_time' in patch ? { start_time: patch.start_time } : {}),
-        ...('end_time' in patch ? { end_time: patch.end_time } : {}),
-        ...('room_id' in patch ? { room_id: patch.room_id } : {}),
-        ...('is_cancelled' in patch ? { is_cancelled: Boolean(patch.is_cancelled) } : {}),
-        ...('teacher_initial' in patch ? { teacher_initial: patch.teacher_initial } : {}),
-      };
+    if (entryId) {
+      simulated = simulated.map((e) => {
+        if (e.id !== entryId) return e;
+        return {
+          ...e,
+          ...('day' in patch ? { day: patch.day } : {}),
+          ...('start_time' in patch ? { start_time: patch.start_time } : {}),
+          ...('end_time' in patch ? { end_time: patch.end_time } : {}),
+          ...('room_id' in patch ? { room_id: patch.room_id } : {}),
+          ...('is_cancelled' in patch ? { is_cancelled: Boolean(patch.is_cancelled) } : {}),
+          ...('teacher_initial' in patch ? { teacher_initial: patch.teacher_initial } : {}),
+        };
+      });
+    }
+
+    if (Array.isArray(req.body?.cancelIds)) {
+      const set = new Set(req.body.cancelIds);
+      simulated = simulated.map((e) => (set.has(e.id) ? { ...e, is_cancelled: true } : e));
+    }
+
+    const before = findConflicts(live);
+    const after = findConflicts(simulated);
+    const target = entryId ? simulated.find((e) => e.id === entryId) : null;
+    const ripple = target
+      ? conflictsWith(target, simulated.filter((e) => e.id !== target.id))
+      : after;
+
+    const freedRooms = [];
+    if (patch.is_cancelled && entryId) {
+      const orig = live.find((e) => e.id === entryId);
+      if (orig?.room_id) freedRooms.push(orig.room_id);
+    }
+
+    res.json({
+      beforeCount: before.length,
+      afterCount: after.length,
+      delta: after.length - before.length,
+      ripple,
+      afterConflicts: after.slice(0, 40),
+      freedRooms,
+      suggestion:
+        after.length < before.length
+          ? 'This change reduces clashes.'
+          : after.length > before.length
+            ? 'This change introduces new clashes — review ripple list.'
+            : 'Clash count unchanged.',
     });
+  } catch (e) {
+    next(e);
   }
-
-  if (Array.isArray(req.body?.cancelIds)) {
-    const set = new Set(req.body.cancelIds);
-    simulated = simulated.map((e) => (set.has(e.id) ? { ...e, is_cancelled: true } : e));
-  }
-
-  const before = findConflicts(live);
-  const after = findConflicts(simulated);
-  const target = entryId ? simulated.find((e) => e.id === entryId) : null;
-  const ripple = target
-    ? conflictsWith(target, simulated.filter((e) => e.id !== target.id))
-    : after;
-
-  const freedRooms = [];
-  if (patch.is_cancelled && entryId) {
-    const orig = live.find((e) => e.id === entryId);
-    if (orig?.room_id) freedRooms.push(orig.room_id);
-  }
-
-  res.json({
-    beforeCount: before.length,
-    afterCount: after.length,
-    delta: after.length - before.length,
-    ripple,
-    afterConflicts: after.slice(0, 40),
-    freedRooms,
-    suggestion:
-      after.length < before.length
-        ? 'This change reduces clashes.'
-        : after.length > before.length
-          ? 'This change introduces new clashes — review ripple list.'
-          : 'Clash count unchanged.',
-  });
 });
 
 /* ── Live occupancy ────────────────────────────────────── */
-advancedRouter.get('/rooms/occupancy/live', requireAuth, (_req, res) => {
-  const day = todayCode();
-  const now = minutesNow();
-  const rooms = all('SELECT * FROM rooms ORDER BY name');
-  const presence = Object.fromEntries(
-    all('SELECT * FROM room_presence').map((p) => [p.room_id, p]),
-  );
-  const liveClasses = all(
-    `SELECT * FROM timetable_entries
-     WHERE day = ? AND is_cancelled = 0 AND mode != 'Online'`,
-    [day],
-  ).filter((e) => toMin(e.start_time) <= now && now < toMin(e.end_time));
+advancedRouter.get('/rooms/occupancy/live', requireAuth, async (_req, res, next) => {
+  try {
+    const day = todayCode();
+    const now = minutesNow();
+    const rooms = await findMany('rooms', {}, { sort: { name: 1 } });
+    const presence = Object.fromEntries(
+      (await findMany('room_presence', {})).map((p) => [p.room_id, p]),
+    );
+    const liveClasses = (await findMany('timetable_entries', {
+      day,
+      is_cancelled: { $ne: true },
+      mode: { $ne: 'Online' },
+    })).filter((e) => toMin(e.start_time) <= now && now < toMin(e.end_time));
 
-  const byRoom = Object.fromEntries(liveClasses.map((e) => [e.room_id, e]));
-  res.json({
-    day,
-    now: new Date().toISOString(),
-    rooms: rooms.map((r) => {
-      const scheduled = byRoom[r.id] || null;
-      const live = presence[r.id] || null;
-      let status = 'free';
-      if (scheduled) status = 'busy';
-      if (live?.status === 'full') status = 'full';
-      if (live?.status === 'busy' && !scheduled) status = 'busy';
-      if (live?.status === 'free' && !scheduled) status = 'free';
-      return {
-        ...r,
-        status,
-        scheduled: scheduled
-          ? {
-              id: scheduled.id,
-              course_code: scheduled.course_code,
-              teacher_initial: scheduled.teacher_initial,
-              start_time: scheduled.start_time,
-              end_time: scheduled.end_time,
-              batch_id: scheduled.batch_id,
-            }
-          : null,
-        presence: live,
-      };
-    }),
-  });
+    const byRoom = Object.fromEntries(liveClasses.map((e) => [e.room_id, e]));
+    res.json({
+      day,
+      now: new Date().toISOString(),
+      rooms: rooms.map((r) => {
+        const scheduled = byRoom[r.id] || null;
+        const live = presence[r.id] || null;
+        let status = 'free';
+        if (scheduled) status = 'busy';
+        if (live?.status === 'full') status = 'full';
+        if (live?.status === 'busy' && !scheduled) status = 'busy';
+        if (live?.status === 'free' && !scheduled) status = 'free';
+        return {
+          ...r,
+          status,
+          scheduled: scheduled
+            ? {
+                id: scheduled.id,
+                course_code: scheduled.course_code,
+                teacher_initial: scheduled.teacher_initial,
+                start_time: scheduled.start_time,
+                end_time: scheduled.end_time,
+                batch_id: scheduled.batch_id,
+              }
+            : null,
+          presence: live,
+        };
+      }),
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
-advancedRouter.put('/rooms/:id/presence', adminOnly, (req, res) => {
-  const room = get('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
-  if (!room) return res.status(404).json({ error: 'Room not found' });
-  const status = String(req.body?.status || 'unknown');
-  if (!['free', 'busy', 'full', 'unknown'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
+advancedRouter.put('/rooms/:id/presence', adminOnly, async (req, res, next) => {
+  try {
+    const room = await findOne('rooms', { id: req.params.id });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const status = String(req.body?.status || 'unknown');
+    if (!['free', 'busy', 'full', 'unknown'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const updatedAt = nowIso();
+    await updateOne(
+      'room_presence',
+      { room_id: room.id },
+      {
+        $set: {
+          room_id: room.id,
+          status,
+          note: bind(req.body?.note || null),
+          updated_by: bind(req.session?.username || req.session?.id),
+          updated_at: updatedAt,
+        },
+        $setOnInsert: {
+          id: room.id,
+          _id: room.id,
+        },
+      },
+      { upsert: true },
+    );
+    res.json(await findOne('room_presence', { room_id: room.id }));
+  } catch (e) {
+    next(e);
   }
-  run(
-    `INSERT INTO room_presence (room_id, status, note, updated_by, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(room_id) DO UPDATE SET
-       status = excluded.status,
-       note = excluded.note,
-       updated_by = excluded.updated_by,
-       updated_at = excluded.updated_at`,
-    [
-      room.id,
-      status,
-      bind(req.body?.note || null),
-      bind(req.session?.username || req.session?.id),
-      nowIso(),
-    ],
-  );
-  res.json(get('SELECT * FROM room_presence WHERE room_id = ?', [room.id]));
 });
 
 /* ── Negotiations ──────────────────────────────────────── */
-advancedRouter.get('/negotiations', requireAuth, (req, res) => {
-  const rows = all(
-    `SELECT * FROM conflict_negotiations ORDER BY created_at DESC LIMIT 100`,
-  );
-  const role = req.session?.role;
-  const filtered =
-    role === 'super_admin'
-      ? rows
-      : rows.filter((n) => {
-          const prop = n.proposal_json ? JSON.parse(n.proposal_json) : {};
-          return (
-            prop.targetTeacher === req.session?.teacherInitial ||
-            n.initiator_id === req.session?.teacherInitial ||
-            n.initiator_id === req.session?.id
-          );
-        });
-  res.json(
-    filtered.map((n) => ({
-      ...n,
-      proposal: n.proposal_json ? JSON.parse(n.proposal_json) : null,
-    })),
-  );
+advancedRouter.get('/negotiations', requireAuth, async (req, res, next) => {
+  try {
+    const rows = await findMany(
+      'conflict_negotiations',
+      {},
+      { sort: { created_at: -1 }, limit: 100 },
+    );
+    const role = req.session?.role;
+    const filtered =
+      role === 'super_admin'
+        ? rows
+        : rows.filter((n) => {
+            const prop = parseJsonField(n.proposal_json) || {};
+            return (
+              prop.targetTeacher === req.session?.teacherInitial ||
+              n.initiator_id === req.session?.teacherInitial ||
+              n.initiator_id === req.session?.id
+            );
+          });
+    res.json(
+      filtered.map((n) => ({
+        ...n,
+        proposal: parseJsonField(n.proposal_json),
+      })),
+    );
+  } catch (e) {
+    next(e);
+  }
 });
 
-advancedRouter.post('/negotiations', requireAuth, (req, res) => {
-  const { kind, resource, message, entryAId, entryBId, proposal } = req.body || {};
-  if (!entryAId || !entryBId) {
-    return res.status(400).json({ error: 'entryAId and entryBId required' });
-  }
-  const a = get('SELECT * FROM timetable_entries WHERE id = ?', [entryAId]);
-  const b = get('SELECT * FROM timetable_entries WHERE id = ?', [entryBId]);
-  if (!a || !b) return res.status(404).json({ error: 'Entries not found' });
-  const fp = fingerprintConflict({
-    kind: kind || 'teacher',
-    resource: resource || a.teacher_initial,
-    day: a.day,
-    start_time: a.start_time,
-    message: message || '',
-  });
-  const id = randomUUID();
-  run(
-    `INSERT INTO conflict_negotiations
-      (id, fingerprint, status, kind, resource, message, entry_a_id, entry_b_id,
-       initiator_role, initiator_id, proposal_json)
-     VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
+advancedRouter.post('/negotiations', requireAuth, async (req, res, next) => {
+  try {
+    const { kind, resource, message, entryAId, entryBId, proposal } = req.body || {};
+    if (!entryAId || !entryBId) {
+      return res.status(400).json({ error: 'entryAId and entryBId required' });
+    }
+    const a = await findOne('timetable_entries', { id: entryAId });
+    const b = await findOne('timetable_entries', { id: entryBId });
+    if (!a || !b) return res.status(404).json({ error: 'Entries not found' });
+    const fp = fingerprintConflict({
+      kind: kind || 'teacher',
+      resource: resource || a.teacher_initial,
+      day: a.day,
+      start_time: a.start_time,
+      message: message || '',
+    });
+    const id = randomUUID();
+    await insertOne('conflict_negotiations', {
       id,
-      fp,
-      bind(kind || 'teacher'),
-      bind(resource || a.teacher_initial),
-      bind(message || `Resolve clash between ${a.course_code} and ${b.course_code}`),
-      entryAId,
-      entryBId,
-      bind(req.session?.role),
-      bind(req.session?.teacherInitial || req.session?.id),
-      JSON.stringify(
+      fingerprint: fp,
+      status: 'open',
+      kind: bind(kind || 'teacher'),
+      resource: bind(resource || a.teacher_initial),
+      message: bind(message || `Resolve clash between ${a.course_code} and ${b.course_code}`),
+      entry_a_id: entryAId,
+      entry_b_id: entryBId,
+      initiator_role: bind(req.session?.role),
+      initiator_id: bind(req.session?.teacherInitial || req.session?.id),
+      proposal_json: JSON.stringify(
         proposal || {
           moveEntryId: entryBId,
           suggestedDay: a.day,
           targetTeacher: b.teacher_initial,
         },
       ),
-    ],
-  );
-  recordAudit({
-    session: req.session,
-    action: 'negotiation.create',
-    entityType: 'negotiation',
-    entityId: id,
-    summary: message || 'Conflict negotiation opened',
-  });
-  res.status(201).json(get('SELECT * FROM conflict_negotiations WHERE id = ?', [id]));
+      created_at: nowIso(),
+    });
+    await recordAudit({
+      session: req.session,
+      action: 'negotiation.create',
+      entityType: 'negotiation',
+      entityId: id,
+      summary: message || 'Conflict negotiation opened',
+    });
+    res.status(201).json(await findOne('conflict_negotiations', { id }));
+  } catch (e) {
+    next(e);
+  }
 });
 
-advancedRouter.post('/negotiations/:id/respond', requireAuth, (req, res) => {
-  const n = get('SELECT * FROM conflict_negotiations WHERE id = ?', [req.params.id]);
-  if (!n) return res.status(404).json({ error: 'Not found' });
-  if (n.status !== 'open') return res.status(400).json({ error: 'Already resolved' });
-  const accept = Boolean(req.body?.accept);
-  const proposal = n.proposal_json ? JSON.parse(n.proposal_json) : {};
+advancedRouter.post('/negotiations/:id/respond', requireAuth, async (req, res, next) => {
+  try {
+    const n = await findOne('conflict_negotiations', { id: req.params.id });
+    if (!n) return res.status(404).json({ error: 'Not found' });
+    if (n.status !== 'open') return res.status(400).json({ error: 'Already resolved' });
+    const accept = Boolean(req.body?.accept);
+    const proposal = parseJsonField(n.proposal_json) || {};
 
-  if (accept && proposal.moveEntryId && (proposal.day || proposal.start_time || proposal.room_id)) {
-    const entry = get('SELECT * FROM timetable_entries WHERE id = ?', [proposal.moveEntryId]);
-    if (entry) {
-      const next = {
-        ...entry,
-        day: proposal.day || entry.day,
-        start_time: proposal.start_time || entry.start_time,
-        end_time: proposal.end_time || entry.end_time,
-        room_id: proposal.room_id !== undefined ? proposal.room_id : entry.room_id,
-      };
-      const clashes = conflictsWith(
-        next,
-        all('SELECT * FROM timetable_entries').filter((e) => e.id !== entry.id),
-      );
-      if (clashes.length && !req.body?.force) {
-        return res.status(409).json({ error: 'Proposal still clashes', conflicts: clashes });
-      }
-      run(
-        `UPDATE timetable_entries
-         SET day = ?, start_time = ?, end_time = ?, room_id = ?, updated_at = ?
-         WHERE id = ?`,
-        [
-          next.day,
-          next.start_time,
-          next.end_time,
-          bind(next.room_id),
-          nowIso(),
-          entry.id,
-        ],
-      );
-      try {
-        announce(entryOut(next), 'class_reschedule', 'Class rescheduled', 'Negotiation accepted.');
-      } catch {
-        /* ignore notify errors */
+    if (accept && proposal.moveEntryId && (proposal.day || proposal.start_time || proposal.room_id)) {
+      const entry = await findOne('timetable_entries', { id: proposal.moveEntryId });
+      if (entry) {
+        const nextEntry = {
+          ...entry,
+          day: proposal.day || entry.day,
+          start_time: proposal.start_time || entry.start_time,
+          end_time: proposal.end_time || entry.end_time,
+          room_id: proposal.room_id !== undefined ? proposal.room_id : entry.room_id,
+        };
+        const allEntries = await findMany('timetable_entries', {});
+        const clashes = conflictsWith(
+          nextEntry,
+          allEntries.filter((e) => e.id !== entry.id),
+        );
+        if (clashes.length && !req.body?.force) {
+          return res.status(409).json({ error: 'Proposal still clashes', conflicts: clashes });
+        }
+        await updateOne(
+          'timetable_entries',
+          { id: entry.id },
+          {
+            $set: {
+              day: nextEntry.day,
+              start_time: nextEntry.start_time,
+              end_time: nextEntry.end_time,
+              room_id: bind(nextEntry.room_id),
+              updated_at: nowIso(),
+            },
+          },
+        );
+        try {
+          await announce(entryOut(nextEntry), 'class_reschedule', 'Class rescheduled', 'Negotiation accepted.');
+        } catch {
+          /* ignore notify errors */
+        }
       }
     }
-  }
 
-  run(
-    `UPDATE conflict_negotiations SET status = ?, resolved_at = ? WHERE id = ?`,
-    [accept ? 'accepted' : 'rejected', nowIso(), n.id],
-  );
-  recordAudit({
-    session: req.session,
-    action: accept ? 'negotiation.accept' : 'negotiation.reject',
-    entityType: 'negotiation',
-    entityId: n.id,
-    summary: accept ? 'Negotiation accepted' : 'Negotiation rejected',
-  });
-  res.json(get('SELECT * FROM conflict_negotiations WHERE id = ?', [n.id]));
+    await updateOne(
+      'conflict_negotiations',
+      { id: n.id },
+      { $set: { status: accept ? 'accepted' : 'rejected', resolved_at: nowIso() } },
+    );
+    await recordAudit({
+      session: req.session,
+      action: accept ? 'negotiation.accept' : 'negotiation.reject',
+      entityType: 'negotiation',
+      entityId: n.id,
+      summary: accept ? 'Negotiation accepted' : 'Negotiation rejected',
+    });
+    res.json(await findOne('conflict_negotiations', { id: n.id }));
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* ── Attendance QR ─────────────────────────────────────── */
-advancedRouter.post('/attendance/open', requireAuth, (req, res) => {
-  const entryId = String(req.body?.entryId || '');
-  const entry = get('SELECT * FROM timetable_entries WHERE id = ?', [entryId]);
-  if (!entry) return res.status(404).json({ error: 'Class not found' });
-  const role = req.session?.role;
-  if (
-    role !== 'super_admin' &&
-    req.session?.teacherInitial &&
-    req.session.teacherInitial !== entry.teacher_initial
-  ) {
-    return res.status(403).json({ error: 'Not your class' });
-  }
-  const token = randomBytes(12).toString('hex');
-  const id = randomUUID();
-  const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-  run(
-    `UPDATE attendance_sessions SET is_open = 0 WHERE entry_id = ? AND is_open = 1`,
-    [entryId],
-  );
-  run(
-    `INSERT INTO attendance_sessions (id, entry_id, token, opened_by, expires_at, is_open)
-     VALUES (?, ?, ?, ?, ?, 1)`,
-    [
-      id,
-      entryId,
-      token,
-      bind(req.session?.teacherInitial || req.session?.username || req.session?.id),
-      expires,
-    ],
-  );
-  res.status(201).json({
-    id,
-    token,
-    expires_at: expires,
-    entry: entryOut(entry),
-    scanUrl: `/student/attendance?token=${token}`,
-  });
-});
-
-advancedRouter.post('/attendance/scan', requireAuth, (req, res) => {
-  if (req.session?.role !== 'student') {
-    return res.status(403).json({ error: 'Students only' });
-  }
-  const token = String(req.body?.token || '').trim();
-  const session = get(
-    `SELECT * FROM attendance_sessions WHERE token = ? AND is_open = 1`,
-    [token],
-  );
-  if (!session) return res.status(404).json({ error: 'Invalid or closed session' });
-  if (new Date(session.expires_at).getTime() < Date.now()) {
-    return res.status(410).json({ error: 'Session expired' });
-  }
-  const studentId = req.session.studentId || req.session.id;
-  const student = get(
-    `SELECT * FROM students WHERE student_id = ? OR id = ?`,
-    [studentId, studentId],
-  );
+advancedRouter.post('/attendance/open', requireAuth, async (req, res, next) => {
   try {
-    run(
-      `INSERT INTO attendance_records (id, session_id, student_id, student_name)
-       VALUES (?, ?, ?, ?)`,
-      [randomUUID(), session.id, student?.student_id || studentId, bind(student?.name || null)],
+    const entryId = String(req.body?.entryId || '');
+    const entry = await findOne('timetable_entries', { id: entryId });
+    if (!entry) return res.status(404).json({ error: 'Class not found' });
+    const role = req.session?.role;
+    if (
+      role !== 'super_admin' &&
+      req.session?.teacherInitial &&
+      req.session.teacherInitial !== entry.teacher_initial
+    ) {
+      return res.status(403).json({ error: 'Not your class' });
+    }
+    const token = randomBytes(12).toString('hex');
+    const id = randomUUID();
+    const expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    await updateMany(
+      'attendance_sessions',
+      { entry_id: entryId, is_open: true },
+      { $set: { is_open: false } },
     );
-  } catch {
-    return res.status(409).json({ error: 'Already marked present' });
+    await insertOne('attendance_sessions', {
+      id,
+      entry_id: entryId,
+      token,
+      opened_by: bind(req.session?.teacherInitial || req.session?.username || req.session?.id),
+      expires_at: expires,
+      is_open: true,
+      created_at: nowIso(),
+    });
+    res.status(201).json({
+      id,
+      token,
+      expires_at: expires,
+      entry: entryOut(entry),
+      scanUrl: `/student/attendance?token=${token}`,
+    });
+  } catch (e) {
+    next(e);
   }
-  res.json({ ok: true, course: get('SELECT course_code FROM timetable_entries WHERE id = ?', [session.entry_id]) });
 });
 
-advancedRouter.get('/attendance/report', adminOnly, (req, res) => {
-  const entryId = req.query.entryId;
-  let sessions;
-  if (entryId) {
-    sessions = all(`SELECT * FROM attendance_sessions WHERE entry_id = ? ORDER BY created_at DESC`, [
-      String(entryId),
-    ]);
-  } else {
-    sessions = all(`SELECT * FROM attendance_sessions ORDER BY created_at DESC LIMIT 40`);
+advancedRouter.post('/attendance/scan', requireAuth, async (req, res, next) => {
+  try {
+    if (req.session?.role !== 'student') {
+      return res.status(403).json({ error: 'Students only' });
+    }
+    const token = String(req.body?.token || '').trim();
+    const session = await findOne('attendance_sessions', { token, is_open: true });
+    if (!session) return res.status(404).json({ error: 'Invalid or closed session' });
+    if (new Date(session.expires_at).getTime() < Date.now()) {
+      return res.status(410).json({ error: 'Session expired' });
+    }
+    const studentId = req.session.studentId || req.session.id;
+    const student = await findOne('students', {
+      $or: [{ student_id: studentId }, { id: studentId }],
+    });
+    try {
+      await insertOne('attendance_records', {
+        id: randomUUID(),
+        session_id: session.id,
+        student_id: student?.student_id || studentId,
+        student_name: bind(student?.name || null),
+        scanned_at: nowIso(),
+      });
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/duplicate|E11000|unique/i.test(msg)) {
+        return res.status(409).json({ error: 'Already marked present' });
+      }
+      throw err;
+    }
+    const entry = await findOne('timetable_entries', { id: session.entry_id });
+    res.json({ ok: true, course: entry ? { course_code: entry.course_code } : null });
+  } catch (e) {
+    next(e);
   }
-  res.json(
-    sessions.map((s) => ({
-      ...s,
-      records: all(`SELECT * FROM attendance_records WHERE session_id = ? ORDER BY scanned_at`, [s.id]),
-    })),
-  );
+});
+
+advancedRouter.get('/attendance/report', adminOnly, async (req, res, next) => {
+  try {
+    const entryId = req.query.entryId;
+    let sessions;
+    if (entryId) {
+      sessions = await findMany(
+        'attendance_sessions',
+        { entry_id: String(entryId) },
+        { sort: { created_at: -1 } },
+      );
+    } else {
+      sessions = await findMany(
+        'attendance_sessions',
+        {},
+        { sort: { created_at: -1 }, limit: 40 },
+      );
+    }
+    const out = [];
+    for (const s of sessions) {
+      out.push({
+        ...s,
+        records: await findMany(
+          'attendance_records',
+          { session_id: s.id },
+          { sort: { scanned_at: 1 } },
+        ),
+      });
+    }
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* ── Predictive load ───────────────────────────────────── */
-advancedRouter.get('/analytics/predictive', adminOnly, (_req, res) => {
-  const entries = all('SELECT * FROM timetable_entries WHERE is_cancelled = 0');
-  const teacherLoad = {};
-  const dayHour = {};
-  for (const e of entries) {
-    teacherLoad[e.teacher_initial] = (teacherLoad[e.teacher_initial] || 0) + 1;
-    const h = Number(String(e.start_time).slice(0, 2));
-    const key = `${e.day}|${h}`;
-    dayHour[key] = (dayHour[key] || 0) + 1;
+advancedRouter.get('/analytics/predictive', adminOnly, async (_req, res, next) => {
+  try {
+    const entries = await findMany('timetable_entries', { is_cancelled: { $ne: true } });
+    const teacherLoad = {};
+    const dayHour = {};
+    for (const e of entries) {
+      teacherLoad[e.teacher_initial] = (teacherLoad[e.teacher_initial] || 0) + 1;
+      const h = Number(String(e.start_time).slice(0, 2));
+      const key = `${e.day}|${h}`;
+      dayHour[key] = (dayHour[key] || 0) + 1;
+    }
+    const burnout = Object.entries(teacherLoad)
+      .map(([teacher, load]) => ({
+        teacher,
+        load,
+        risk: load >= 12 ? 'high' : load >= 8 ? 'medium' : 'low',
+        advice:
+          load >= 12
+            ? 'Redistribute 1–2 sessions to another day or co-teacher.'
+            : load >= 8
+              ? 'Watch consecutive slots; avoid adding Friday load.'
+              : 'Load looks healthy.',
+      }))
+      .sort((a, b) => b.load - a.load);
+
+    const hotSlots = Object.entries(dayHour)
+      .map(([k, count]) => {
+        const [day, hour] = k.split('|');
+        return { day, hour: Number(hour), count, pressure: count >= 6 ? 'peak' : count >= 4 ? 'busy' : 'ok' };
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+
+    const forecast = burnout.slice(0, 5).map((b) => ({
+      teacher: b.teacher,
+      nextWeekLoad: Math.round(b.load * 1.05),
+      trend: b.load >= 10 ? 'rising' : 'stable',
+    }));
+
+    res.json({ burnout, hotSlots, forecast, generatedAt: nowIso() });
+  } catch (e) {
+    next(e);
   }
-  const burnout = Object.entries(teacherLoad)
-    .map(([teacher, load]) => ({
-      teacher,
-      load,
-      risk: load >= 12 ? 'high' : load >= 8 ? 'medium' : 'low',
-      advice:
-        load >= 12
-          ? 'Redistribute 1–2 sessions to another day or co-teacher.'
-          : load >= 8
-            ? 'Watch consecutive slots; avoid adding Friday load.'
-            : 'Load looks healthy.',
-    }))
-    .sort((a, b) => b.load - a.load);
-
-  const hotSlots = Object.entries(dayHour)
-    .map(([k, count]) => {
-      const [day, hour] = k.split('|');
-      return { day, hour: Number(hour), count, pressure: count >= 6 ? 'peak' : count >= 4 ? 'busy' : 'ok' };
-    })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 12);
-
-  const forecast = burnout.slice(0, 5).map((b) => ({
-    teacher: b.teacher,
-    nextWeekLoad: Math.round(b.load * 1.05),
-    trend: b.load >= 10 ? 'rising' : 'stable',
-  }));
-
-  res.json({ burnout, hotSlots, forecast, generatedAt: nowIso() });
 });
 
 /* ── Student optimizer ─────────────────────────────────── */
-advancedRouter.get('/students/me/preferences', requireAuth, (req, res) => {
-  if (req.session?.role !== 'student') return res.status(403).json({ error: 'Students only' });
-  const sid = req.session.studentId || req.session.id;
-  const row = get('SELECT * FROM student_preferences WHERE student_id = ?', [sid]);
-  res.json(
-    row || {
-      student_id: sid,
-      avoid_early: 0,
-      prefer_gaps: 1,
-      max_daily: 4,
-      prefer_online: 0,
-      notes: null,
-    },
-  );
-});
-
-advancedRouter.put('/students/me/preferences', requireAuth, (req, res) => {
-  if (req.session?.role !== 'student') return res.status(403).json({ error: 'Students only' });
-  const sid = req.session.studentId || req.session.id;
-  run(
-    `INSERT INTO student_preferences (student_id, avoid_early, prefer_gaps, max_daily, prefer_online, notes, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(student_id) DO UPDATE SET
-       avoid_early = excluded.avoid_early,
-       prefer_gaps = excluded.prefer_gaps,
-       max_daily = excluded.max_daily,
-       prefer_online = excluded.prefer_online,
-       notes = excluded.notes,
-       updated_at = excluded.updated_at`,
-    [
-      sid,
-      bind(Boolean(req.body?.avoid_early)),
-      bind(req.body?.prefer_gaps !== false),
-      Number(req.body?.max_daily) || 4,
-      bind(Boolean(req.body?.prefer_online)),
-      bind(req.body?.notes || null),
-      nowIso(),
-    ],
-  );
-  res.json(get('SELECT * FROM student_preferences WHERE student_id = ?', [sid]));
-});
-
-advancedRouter.post('/students/me/optimize', requireAuth, (req, res) => {
-  if (req.session?.role !== 'student') return res.status(403).json({ error: 'Students only' });
-  const sid = req.session.studentId || req.session.id;
-  const student = get(`SELECT * FROM students WHERE student_id = ? OR id = ?`, [sid, sid]);
-  if (!student) return res.status(404).json({ error: 'Student not found' });
-  const prefs =
-    get('SELECT * FROM student_preferences WHERE student_id = ?', [sid]) || {
-      avoid_early: 0,
-      prefer_gaps: 1,
-      max_daily: 4,
-    };
-  const classes = all(
-    `SELECT * FROM timetable_entries WHERE batch_id = ? AND is_cancelled = 0 ORDER BY day, start_time`,
-    [student.batch_id],
-  ).map(entryOut);
-
-  const byDay = {};
-  for (const e of classes) {
-    byDay[e.day] = byDay[e.day] || [];
-    byDay[e.day].push(e);
+advancedRouter.get('/students/me/preferences', requireAuth, async (req, res, next) => {
+  try {
+    if (req.session?.role !== 'student') return res.status(403).json({ error: 'Students only' });
+    const sid = req.session.studentId || req.session.id;
+    const row = await findOne('student_preferences', { student_id: sid });
+    res.json(
+      row || {
+        student_id: sid,
+        avoid_early: false,
+        prefer_gaps: true,
+        max_daily: 4,
+        prefer_online: false,
+        notes: null,
+      },
+    );
+  } catch (e) {
+    next(e);
   }
+});
 
-  const tips = [];
-  const studyBlocks = [];
-  for (const day of DEFAULT_DAYS) {
-    const list = byDay[day] || [];
-    if (prefs.avoid_early && list.some((e) => toMin(e.start_time) < 10 * 60)) {
-      tips.push({
-        day,
-        kind: 'early',
-        text: `${day}: early class at ${list[0]?.start_time} — plan commute buffer.`,
-      });
+advancedRouter.put('/students/me/preferences', requireAuth, async (req, res, next) => {
+  try {
+    if (req.session?.role !== 'student') return res.status(403).json({ error: 'Students only' });
+    const sid = req.session.studentId || req.session.id;
+    const updatedAt = nowIso();
+    await updateOne(
+      'student_preferences',
+      { student_id: sid },
+      {
+        $set: {
+          student_id: sid,
+          avoid_early: Boolean(req.body?.avoid_early),
+          prefer_gaps: req.body?.prefer_gaps !== false,
+          max_daily: Number(req.body?.max_daily) || 4,
+          prefer_online: Boolean(req.body?.prefer_online),
+          notes: bind(req.body?.notes || null),
+          updated_at: updatedAt,
+        },
+        $setOnInsert: {
+          id: sid,
+          _id: sid,
+        },
+      },
+      { upsert: true },
+    );
+    res.json(await findOne('student_preferences', { student_id: sid }));
+  } catch (e) {
+    next(e);
+  }
+});
+
+advancedRouter.post('/students/me/optimize', requireAuth, async (req, res, next) => {
+  try {
+    if (req.session?.role !== 'student') return res.status(403).json({ error: 'Students only' });
+    const sid = req.session.studentId || req.session.id;
+    const student = await findOne('students', {
+      $or: [{ student_id: sid }, { id: sid }],
+    });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    const prefs =
+      (await findOne('student_preferences', { student_id: sid })) || {
+        avoid_early: false,
+        prefer_gaps: true,
+        max_daily: 4,
+      };
+    const classes = (
+      await findMany(
+        'timetable_entries',
+        { batch_id: student.batch_id, is_cancelled: { $ne: true } },
+        { sort: { day: 1, start_time: 1 } },
+      )
+    ).map(entryOut);
+
+    const byDay = {};
+    for (const e of classes) {
+      byDay[e.day] = byDay[e.day] || [];
+      byDay[e.day].push(e);
     }
-    if (list.length > (prefs.max_daily || 4)) {
-      tips.push({
-        day,
-        kind: 'overload',
-        text: `${day}: ${list.length} classes exceeds your max (${prefs.max_daily}).`,
-      });
-    }
-    for (let i = 0; i < list.length - 1; i += 1) {
-      const gap = toMin(list[i + 1].start_time) - toMin(list[i].end_time);
-      if (gap >= 60) {
+
+    const tips = [];
+    const studyBlocks = [];
+    for (const day of DEFAULT_DAYS) {
+      const list = byDay[day] || [];
+      if (prefs.avoid_early && list.some((e) => toMin(e.start_time) < 10 * 60)) {
+        tips.push({
+          day,
+          kind: 'early',
+          text: `${day}: early class at ${list[0]?.start_time} — plan commute buffer.`,
+        });
+      }
+      if (list.length > (prefs.max_daily || 4)) {
+        tips.push({
+          day,
+          kind: 'overload',
+          text: `${day}: ${list.length} classes exceeds your max (${prefs.max_daily}).`,
+        });
+      }
+      for (let i = 0; i < list.length - 1; i += 1) {
+        const gap = toMin(list[i + 1].start_time) - toMin(list[i].end_time);
+        if (gap >= 60) {
+          studyBlocks.push({
+            day,
+            start_time: list[i].end_time,
+            end_time: list[i + 1].start_time,
+            minutes: gap,
+            suggestion: prefs.prefer_gaps
+              ? 'Use this gap for focused study / library.'
+              : 'Optional free window.',
+          });
+        }
+      }
+      if (!list.length) {
         studyBlocks.push({
           day,
-          start_time: list[i].end_time,
-          end_time: list[i + 1].start_time,
-          minutes: gap,
-          suggestion: prefs.prefer_gaps
-            ? 'Use this gap for focused study / library.'
-            : 'Optional free window.',
+          start_time: '09:00',
+          end_time: '12:00',
+          minutes: 180,
+          suggestion: 'Free day morning — deep work block.',
         });
       }
     }
-    if (!list.length) {
-      studyBlocks.push({
-        day,
-        start_time: '09:00',
-        end_time: '12:00',
-        minutes: 180,
-        suggestion: 'Free day morning — deep work block.',
-      });
-    }
+
+    const score = Math.max(
+      0,
+      100 -
+        tips.filter((t) => t.kind === 'overload').length * 15 -
+        (prefs.avoid_early ? tips.filter((t) => t.kind === 'early').length * 8 : 0),
+    );
+
+    res.json({
+      score,
+      tips,
+      studyBlocks: studyBlocks.slice(0, 14),
+      classCount: classes.length,
+      prefs,
+    });
+  } catch (e) {
+    next(e);
   }
-
-  const score = Math.max(
-    0,
-    100 -
-      tips.filter((t) => t.kind === 'overload').length * 15 -
-      (prefs.avoid_early ? tips.filter((t) => t.kind === 'early').length * 8 : 0),
-  );
-
-  res.json({
-    score,
-    tips,
-    studyBlocks: studyBlocks.slice(0, 14),
-    classCount: classes.length,
-    prefs,
-  });
 });
 
 /* ── NL ops ────────────────────────────────────────────── */
@@ -747,107 +874,124 @@ function parseNl(text) {
   };
 }
 
-advancedRouter.post('/ops/nl', adminOnly, (req, res) => {
-  const text = String(req.body?.text || '');
-  const parsed = parseNl(text);
-  const execute = Boolean(req.body?.execute);
-  let result = null;
+advancedRouter.post('/ops/nl', adminOnly, async (req, res, next) => {
+  try {
+    const text = String(req.body?.text || '');
+    const parsed = parseNl(text);
+    const execute = Boolean(req.body?.execute);
+    let result = null;
 
-  if (parsed.plan?.action === 'conflicts') {
-    result = { conflicts: findConflicts(all('SELECT * FROM timetable_entries')).slice(0, 30) };
-  } else if (parsed.plan?.action === 'free_rooms') {
-    const day = parsed.plan.day;
-    const time = parsed.plan.time;
-    const busy = new Set(
-      all(
-        `SELECT room_id FROM timetable_entries
-         WHERE day = ? AND is_cancelled = 0 AND room_id IS NOT NULL
-           AND start_time <= ? AND end_time > ?`,
-        [day, time, time],
-      ).map((r) => r.room_id),
-    );
-    result = {
-      day,
-      time,
-      free: all('SELECT * FROM rooms').filter((r) => !busy.has(r.id)),
-    };
-  } else if (parsed.plan?.action === 'cancel' && parsed.plan.course_code) {
-    const matches = all(
-      `SELECT * FROM timetable_entries
-       WHERE course_code = ? AND is_cancelled = 0
-         ${parsed.plan.day ? 'AND day = ?' : ''}`,
-      parsed.plan.day
-        ? [parsed.plan.course_code, parsed.plan.day]
-        : [parsed.plan.course_code],
-    );
-    result = { matches: matches.map(entryOut), wouldCancel: matches.length };
-    if (execute && matches.length) {
-      for (const e of matches) {
-        run(
-          `UPDATE timetable_entries SET is_cancelled = 1, cancellation_reason = ?, updated_at = ? WHERE id = ?`,
-          ['Cancelled via NL ops', nowIso(), e.id],
-        );
-      }
-      result.executed = true;
-    }
-  } else if (parsed.plan?.action === 'snapshot' && execute) {
-    let sem = get('SELECT * FROM semesters WHERE is_active = 1');
-    if (!sem) {
-      const id = randomUUID();
-      run(`INSERT INTO semesters (id, label, is_active) VALUES (?, 'Live', 1)`, [id]);
-      sem = get('SELECT * FROM semesters WHERE id = ?', [id]);
-    }
-    const entries = all('SELECT * FROM timetable_entries');
-    const id = randomUUID();
-    run(
-      `INSERT INTO timetable_snapshots (id, semester_id, label, entry_count, payload_json, created_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, sem.id, 'NL snapshot', entries.length, JSON.stringify(entries), bind(req.session?.username)],
-    );
-    result = { snapshotId: id, entries: entries.length };
-  } else if (parsed.plan?.action === 'what_if' && parsed.plan.course_code) {
-    const hit = get(
-      `SELECT * FROM timetable_entries WHERE course_code = ? AND is_cancelled = 0 LIMIT 1`,
-      [parsed.plan.course_code],
-    );
-    if (hit) {
-      const live = all('SELECT * FROM timetable_entries');
-      const sim = live.map((e) =>
-        e.id === hit.id
-          ? { ...e, day: parsed.plan.day || e.day, is_cancelled: parsed.plan.day ? 0 : 1 }
-          : e,
-      );
+    if (parsed.plan?.action === 'conflicts') {
       result = {
-        target: entryOut(hit),
-        before: findConflicts(live).length,
-        after: findConflicts(sim).length,
+        conflicts: findConflicts(await findMany('timetable_entries', {})).slice(0, 30),
       };
-    } else result = { error: 'No matching class' };
-  }
+    } else if (parsed.plan?.action === 'free_rooms') {
+      const day = parsed.plan.day;
+      const time = parsed.plan.time;
+      const busyRows = await findMany('timetable_entries', {
+        day,
+        is_cancelled: { $ne: true },
+        room_id: { $nin: [null, ''] },
+        start_time: { $lte: time },
+        end_time: { $gt: time },
+      });
+      const busy = new Set(busyRows.map((r) => r.room_id));
+      result = {
+        day,
+        time,
+        free: (await findMany('rooms', {})).filter((r) => !busy.has(r.id)),
+      };
+    } else if (parsed.plan?.action === 'cancel' && parsed.plan.course_code) {
+      const filter = {
+        course_code: parsed.plan.course_code,
+        is_cancelled: { $ne: true },
+      };
+      if (parsed.plan.day) filter.day = parsed.plan.day;
+      const matches = await findMany('timetable_entries', filter);
+      result = { matches: matches.map(entryOut), wouldCancel: matches.length };
+      if (execute && matches.length) {
+        for (const e of matches) {
+          await updateOne(
+            'timetable_entries',
+            { id: e.id },
+            {
+              $set: {
+                is_cancelled: true,
+                cancellation_reason: 'Cancelled via NL ops',
+                updated_at: nowIso(),
+              },
+            },
+          );
+        }
+        result.executed = true;
+      }
+    } else if (parsed.plan?.action === 'snapshot' && execute) {
+      let sem = await findOne('semesters', { is_active: true });
+      if (!sem) {
+        const id = randomUUID();
+        await insertOne('semesters', {
+          id,
+          label: 'Live',
+          is_active: true,
+          created_at: nowIso(),
+        });
+        sem = await findOne('semesters', { id });
+      }
+      const entries = await findMany('timetable_entries', {});
+      const id = randomUUID();
+      await insertOne('timetable_snapshots', {
+        id,
+        semester_id: sem.id,
+        label: 'NL snapshot',
+        entry_count: entries.length,
+        payload_json: JSON.stringify(entries),
+        created_by: bind(req.session?.username),
+        created_at: nowIso(),
+      });
+      result = { snapshotId: id, entries: entries.length };
+    } else if (parsed.plan?.action === 'what_if' && parsed.plan.course_code) {
+      const hit = await findOne('timetable_entries', {
+        course_code: parsed.plan.course_code,
+        is_cancelled: { $ne: true },
+      });
+      if (hit) {
+        const live = await findMany('timetable_entries', {});
+        const sim = live.map((e) =>
+          e.id === hit.id
+            ? { ...e, day: parsed.plan.day || e.day, is_cancelled: parsed.plan.day ? false : true }
+            : e,
+        );
+        result = {
+          target: entryOut(hit),
+          before: findConflicts(live).length,
+          after: findConflicts(sim).length,
+        };
+      } else result = { error: 'No matching class' };
+    }
 
-  const id = randomUUID();
-  run(
-    `INSERT INTO nl_command_log (id, actor_id, text, intent, plan_json, executed)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
+    const id = randomUUID();
+    await insertOne('nl_command_log', {
       id,
-      bind(req.session?.id || req.session?.username),
+      actor_id: bind(req.session?.id || req.session?.username),
       text,
-      parsed.intent,
-      JSON.stringify(parsed.plan),
-      bind(execute && result && !result.error),
-    ],
-  );
-  recordAudit({
-    session: req.session,
-    action: 'nl.ops',
-    entityType: 'nl',
-    entityId: id,
-    summary: `NL: ${parsed.intent}`,
-    meta: { text, execute },
-  });
+      intent: parsed.intent,
+      plan_json: JSON.stringify(parsed.plan),
+      executed: Boolean(execute && result && !result.error),
+      created_at: nowIso(),
+    });
+    await recordAudit({
+      session: req.session,
+      action: 'nl.ops',
+      entityType: 'nl',
+      entityId: id,
+      summary: `NL: ${parsed.intent}`,
+      meta: { text, execute },
+    });
 
-  res.json({ ...parsed, result, logId: id });
+    res.json({ ...parsed, result, logId: id });
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* Seed soft constraints echo for generate clients */

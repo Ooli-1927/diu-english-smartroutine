@@ -1,53 +1,44 @@
 import { randomUUID } from 'node:crypto';
-import { all, bind, get, run } from './db.js';
+import { bind, findMany, findOne, insertOne, caseInsensitive } from './db.js';
 import { queueMail, queueMails } from './mail.js';
 import { sendPushForNotification } from './push.js';
 import { queueSyncForEntry } from './googleCalendar.js';
 
-function insertNotification({ type, title, body, recipientType, recipientId, entryId }) {
+async function insertNotification({ type, title, body, recipientType, recipientId, entryId }) {
   const id = randomUUID();
-  run(
-    `INSERT INTO notifications (id, type, title, body, recipient_type, recipient_id, related_entry_id, is_read)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-    [
-      id,
-      bind(type),
-      bind(title),
-      bind(body),
-      bind(recipientType),
-      bind(recipientId),
-      bind(entryId),
-    ],
-  );
+  await insertOne('notifications', {
+    id,
+    type: bind(type),
+    title: bind(title),
+    body: bind(body),
+    recipient_type: bind(recipientType),
+    recipient_id: bind(recipientId),
+    related_entry_id: bind(entryId),
+    is_read: false,
+  });
   return id;
 }
 
-function studentEmailsForBatch(batchId, section = null) {
+async function studentEmailsForBatch(batchId, section = null) {
+  const filter = {
+    batch_id: batchId,
+    email: { $nin: [null, ''] },
+  };
   if (section) {
-    return all(
-      `SELECT email, name, student_id FROM students
-       WHERE batch_id = ? AND upper(COALESCE(section, '')) = upper(?)
-         AND email IS NOT NULL AND trim(email) != ''`,
-      [batchId, section],
-    );
+    Object.assign(filter, caseInsensitive('section', section));
   }
-  return all(
-    `SELECT email, name, student_id FROM students
-     WHERE batch_id = ? AND email IS NOT NULL AND trim(email) != ''`,
-    [batchId],
-  );
+  const rows = await findMany('students', filter);
+  return rows.filter((s) => s.email && String(s.email).trim());
 }
 
-function teacherByInitial(initial) {
-  return get('SELECT email, name, initial FROM teachers WHERE initial = ?', [initial]);
+async function teacherByInitial(initial) {
+  return findOne('teachers', { initial });
 }
 
-function studentByStudentId(studentId) {
-  return get(
-    `SELECT email, name, student_id FROM students
-     WHERE student_id = ? OR id = ?`,
-    [studentId, studentId],
-  );
+async function studentByStudentId(studentId) {
+  return findOne('students', {
+    $or: [{ student_id: studentId }, { id: studentId }],
+  });
 }
 
 const CTA = {
@@ -62,7 +53,7 @@ function sliceTime(t) {
 }
 
 /** Resolve course / teacher / room labels for a timetable entry. */
-export function classContext(entry) {
+export async function classContext(entry) {
   if (!entry) {
     return {
       details: [],
@@ -77,17 +68,14 @@ export function classContext(entry) {
     };
   }
 
-  const course = get('SELECT code, title FROM courses WHERE code = ?', [entry.course_code]);
-  const teacher = get(
-    'SELECT name, initial, designation FROM teachers WHERE initial = ?',
-    [entry.teacher_initial],
-  );
+  const course = await findOne('courses', { code: entry.course_code });
+  const teacher = await findOne('teachers', { initial: entry.teacher_initial });
   const room = entry.room_id
-    ? get('SELECT id, name FROM rooms WHERE id = ? OR name = ?', [entry.room_id, entry.room_id])
+    ? await findOne('rooms', {
+        $or: [{ id: entry.room_id }, { name: entry.room_id }],
+      })
     : null;
-  const batch = entry.batch_id
-    ? get('SELECT name, session FROM batches WHERE id = ?', [entry.batch_id])
-    : null;
+  const batch = entry.batch_id ? await findOne('batches', { id: entry.batch_id }) : null;
 
   const courseCode = entry.course_code || '—';
   const courseTitle = course?.title || '—';
@@ -144,10 +132,9 @@ function detailsPlainText(details) {
 }
 
 /**
- * Persist in-app notice + fan-out email(s). Callers must not await —
- * mail is queued so API responses stay fast.
+ * Persist in-app notice + fan-out email(s). Mail is queued so API responses stay fast.
  */
-export function notify({
+export async function notify({
   type,
   title,
   body,
@@ -159,7 +146,7 @@ export function notify({
   details,
   emailBody,
 }) {
-  insertNotification({ type, title, body, recipientType, recipientId, entryId });
+  await insertNotification({ type, title, body, recipientType, recipientId, entryId });
 
   void sendPushForNotification({
     type,
@@ -181,7 +168,7 @@ export function notify({
     const [batchPart, sectionPart] = String(recipientId || '').includes(':')
       ? String(recipientId).split(':')
       : [recipientId, null];
-    const batchStudents = studentEmailsForBatch(batchPart, sectionPart || null);
+    const batchStudents = await studentEmailsForBatch(batchPart, sectionPart || null);
     if (batchStudents.length) {
       queueMails(
         batchStudents.map((s) => ({
@@ -198,7 +185,7 @@ export function notify({
       return;
     }
 
-    const one = studentByStudentId(recipientId);
+    const one = await studentByStudentId(recipientId);
     if (one?.email) {
       queueMail({
         to: one.email,
@@ -215,7 +202,7 @@ export function notify({
   }
 
   if (recipientType === 'teacher') {
-    const t = teacherByInitial(recipientId);
+    const t = await teacherByInitial(recipientId);
     if (t?.email) {
       queueMail({
         to: t.email,
@@ -232,8 +219,8 @@ export function notify({
 }
 
 /** Class change: students in that batch section + owning teacher. */
-export function announce(entry, type, title, body) {
-  const ctx = classContext(entry);
+export async function announce(entry, type, title, body) {
+  const ctx = await classContext(entry);
   const noticeBody = `${body}${detailsPlainText(ctx.details)}`;
   const subject = [
     title,
@@ -248,7 +235,7 @@ export function announce(entry, type, title, body) {
   const section = entry.section || entry.group_name || null;
   const studentRecipient = section ? `${entry.batch_id}:${section}` : entry.batch_id;
 
-  notify({
+  await notify({
     type,
     title,
     subject,
@@ -259,7 +246,7 @@ export function announce(entry, type, title, body) {
     recipientId: studentRecipient,
     entryId: entry.id,
   });
-  notify({
+  await notify({
     type,
     title,
     subject,
@@ -271,10 +258,10 @@ export function announce(entry, type, title, body) {
     entryId: entry.id,
   });
 
-  queueSyncForEntry(entry);
+  await queueSyncForEntry(entry);
 }
 
-export function notifyAppointmentRequest({
+export async function notifyAppointmentRequest({
   teacherInitial,
   studentName,
   date,
@@ -282,7 +269,7 @@ export function notifyAppointmentRequest({
   purpose,
   appointmentId,
 }) {
-  notify({
+  await notify({
     type: 'appointment',
     title: 'New appointment request',
     body: `${studentName} requested ${date} at ${time}: ${purpose}`,
@@ -293,7 +280,7 @@ export function notifyAppointmentRequest({
   });
 }
 
-export function notifyAppointmentDecision({
+export async function notifyAppointmentDecision({
   studentId,
   teacherInitial,
   status,
@@ -302,7 +289,7 @@ export function notifyAppointmentDecision({
   remarks,
   appointmentId,
 }) {
-  const teacher = teacherByInitial(teacherInitial);
+  const teacher = await teacherByInitial(teacherInitial);
   const teacherLabel = teacher?.name
     ? `${teacher.name} (${teacher.initial})`
     : teacherInitial;
@@ -317,7 +304,7 @@ export function notifyAppointmentDecision({
   ];
   if (remarks) bodyParts.push(String(remarks));
 
-  notify({
+  await notify({
     type: 'appointment',
     title,
     subject: `${title} · ${teacherLabel} · ${date} ${time}`,

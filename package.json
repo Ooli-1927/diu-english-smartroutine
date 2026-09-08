@@ -2,7 +2,7 @@
   "name": "diu-english-smartroutine",
   "private": true,
   "version": "1.0.0",
-  "description": "DIU Department of English · SmartRoutine — frontend (React) + backend (Express/SQLite)",
+  "description": "DIU Department of English · SmartRoutine — frontend (React) + backend (Express/MongoDB)",
   "engines": {
     "node": ">=22.5.0"
   },

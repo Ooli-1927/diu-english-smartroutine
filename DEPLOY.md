@@ -3,13 +3,28 @@
 API + database লাগে — **GitHub Pages** বা **Render Static Site** দিয়ে পুরো সাইট চলবে না।  
 চাই: **Render → Web Service (Node)**।
 
+**Repo:** https://github.com/Ooli-1927/diu-english-smartroutine
+
 ---
 
 ## কালো পেজে শুধু "Not Found"?
 
 সাধারণত **Static Site** বানিয়েছেন। মুছে **Web Service** বানান।
 
-### Render Settings (Web Service)
+### Fast path (Blueprint)
+
+1. Render dashboard → delete any **Static Site** named `diu-english-smartroutine`
+2. Open: https://dashboard.render.com/blueprints  
+   → **New Blueprint Instance** → connect `Ooli-1927/diu-english-smartroutine`
+3. Apply `render.yaml` (Web Service, Node 22)
+4. After deploy, Environment → set  
+   `CORS_ORIGIN` = `https://diu-english-smartroutine.onrender.com`  
+   (or whatever URL Render shows) → **Save** → Manual Deploy
+5. Check:
+   - `https://YOUR.onrender.com/api/health` → `"status":"ok"`
+   - `https://YOUR.onrender.com/` → login page
+
+### Manual Web Service settings
 
 | Field | Value |
 | --- | --- |
@@ -27,35 +42,16 @@ Env vars:
 | `CORS_ORIGIN` | Your real frontend origin (e.g. `https://YOUR.onrender.com`) — never `*` |
 | `NODE_ENV` | `production` |
 | `WEB_DIST` | `smartroutine-api/public` |
+| `HOST` | `0.0.0.0` |
 
 তারপর **Manual Deploy → Deploy latest commit**।
-
-চেক:
-1. `https://YOUR.onrender.com/api/health` → `status: ok`
-2. `https://YOUR.onrender.com/` → login পেজ
 
 ---
 
 ## গুরুত্বপূর্ণ
 
-লোকাল ফিক্স GitHub এ **push** না করলে Render পুরনো কোডই চালাবে।  
-GitHub Desktop → Commit → Push।
+লোকাল ফিক্স GitHub এ **push** না করলে Render পুরনো কোডই চালাবে।
 
 `.env` / password ফাইল আপলোড করবেন না।
 
-Free tier প্রথম ওপেনে ৩০–৬০ সেকেন্ড sleep break লাগতে পারে।
-
----
-
-## Offline / demo fallback (frontend)
-
-যদি live API না পাওয়া যায়, web app **offline demo mode**-এ যায় — sticky banner + toast +
-console warning। Login তবুও লাগে; appointments / mail SMTP / generate / lab / attendance
-live server ছাড়া কাজ করে না। Browser-local edits live DIU server-এ যায় না।
-
-## Supabase (optional)
-
-Repo root [`supabase_schema.sql`](./supabase_schema.sql) — tables + **RLS** (anon deny;
-JWT claims `role` / `user_id` / `teacher_initial` / `student_id`)। Render Express/SQLite
-role logic এতে বদলায় না। Production-এ API ব্যবহার করুন; Supabase Auth claims না থাকলে
-anon client দিয়ে data পড়বে না।
+Free tier প্রথম ওপেনে ৩০–৬০ সেকেন্ড sleep break লাগতে পারে। SQLite free disk wipe হতে পারে — demo/preview এর জন্য ঠিক আছে।

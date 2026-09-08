@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node --experimental-sqlite src/index.js",
-    "dev": "node --experimental-sqlite --watch src/index.js",
+    "dev": "node --experimental-sqlite --watch --watch-path=./src src/index.js",
     "seed": "node --experimental-sqlite src/seed.js",
     "reset": "node --experimental-sqlite src/seed.js --force"
   },

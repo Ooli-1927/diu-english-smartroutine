@@ -21,6 +21,7 @@ const emptyForm = {
   student_id: '',
   name: '',
   batch_id: '',
+  section: '',
   email: '',
   password: '12345678',
 };
@@ -82,6 +83,7 @@ export function AdminStudentsPage() {
       student_id: s.student_id,
       name: s.name,
       batch_id: s.batch_id,
+      section: s.section || '',
       email: s.email || '',
       password: '',
     });
@@ -92,7 +94,7 @@ export function AdminStudentsPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setForm({ ...emptyForm, batch_id: form.batch_id });
+    setForm({ ...emptyForm, batch_id: form.batch_id, section: form.section });
     setError('');
   }
 
@@ -115,6 +117,7 @@ export function AdminStudentsPage() {
       student_id: form.student_id.trim(),
       name: form.name.trim(),
       batch_id: form.batch_id,
+      section: form.section.trim().toUpperCase() || null,
       email: form.email.trim() || null,
       phone: existing?.phone ?? null,
       profile_pic: existing?.profile_pic ?? null,
@@ -199,6 +202,19 @@ export function AdminStudentsPage() {
             </option>
           ))}
         </select>
+        <select
+          className="input"
+          value={form.section}
+          onChange={(e) => setForm({ ...form, section: e.target.value })}
+          required
+        >
+          <option value="">Section</option>
+          {'ABCDEFG'.split('').map((s) => (
+            <option key={s} value={s}>
+              Section {s}
+            </option>
+          ))}
+        </select>
         <input
           className="input"
           type="email"
@@ -279,13 +295,14 @@ export function AdminStudentsPage() {
                 onSort={sortBy}
               />
               <th>Email</th>
+              <th>Section</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {list.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted center-cell">
+                <td colSpan={6} className="muted center-cell">
                   No student matches this search.
                 </td>
               </tr>
@@ -296,6 +313,7 @@ export function AdminStudentsPage() {
                 <td>{s.name}</td>
                 <td>{batchById(s.batch_id)?.name || s.batch_id}</td>
                 <td>{s.email || '—'}</td>
+                <td>{s.section || '—'}</td>
                 <td className="row-gap">
                   <button
                     className="icon-btn"

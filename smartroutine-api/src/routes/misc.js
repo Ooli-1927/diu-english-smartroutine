@@ -5,6 +5,19 @@ import { requireAuth, requireRole } from '../auth.js';
 import { notificationOut } from '../shape.js';
 import { notifyAppointmentDecision, notifyAppointmentRequest } from '../notify.js';
 import {
+  SLOT_DAYS,
+  existingBooking,
+  getTeacher,
+  matchingSlot,
+  normalizeClock,
+  slotCovers,
+  slotOut,
+  teacherSlots,
+  timeToMinutes,
+  upcomingWindows,
+  weekdayFromDate,
+} from '../appointmentSlots.js';
+import {
   clearSmtpConfig,
   isMailConfigured,
   mailStatus,
@@ -142,12 +155,16 @@ miscRouter.get('/notifications', requireAuth, (req, res) => {
     );
   }
   if (role === 'student') {
+    const sectionKey =
+      req.session.section && batchId ? `${batchId}:${req.session.section}` : null;
     const rows = all(
       `SELECT * FROM notifications
        WHERE recipient_type = 'student'
-         AND (recipient_id = ? OR recipient_id = ?)
+         AND (recipient_id = ? OR recipient_id = ?${sectionKey ? ' OR recipient_id = ?' : ''})
        ORDER BY created_at DESC LIMIT 100`,
-      [bind(batchId), bind(studentId)],
+      sectionKey
+        ? [bind(batchId), bind(studentId), bind(sectionKey)]
+        : [bind(batchId), bind(studentId)],
     );
     return res.json(rows.map(notificationOut));
   }
@@ -161,6 +178,183 @@ miscRouter.get('/notifications', requireAuth, (req, res) => {
 
 miscRouter.patch('/notifications/:id/read', requireAuth, (req, res) => {
   run('UPDATE notifications SET is_read = 1 WHERE id = ?', [req.params.id]);
+  res.json({ ok: true });
+});
+
+function requireTeacherInitial(req) {
+  return req.session?.teacherInitial || null;
+}
+
+function slotBody(body = {}) {
+  const day = String(body.day || '').trim();
+  const start_time = normalizeClock(body.start_time);
+  const end_time = normalizeClock(body.end_time);
+  const location = String(body.location || '').trim();
+  const note = String(body.note || '').trim();
+  const is_active = body.is_active === false || body.is_active === 0 ? 0 : 1;
+  return { day, start_time, end_time, location, note, is_active };
+}
+
+function validateSlotTimes(day, start_time, end_time) {
+  if (!SLOT_DAYS.includes(day)) return 'Pick a valid day (Sat–Fri)';
+  if (!start_time || !end_time) return 'Start and end time are required';
+  if (timeToMinutes(end_time) <= timeToMinutes(start_time)) return 'End time must be after start time';
+  return null;
+}
+
+miscRouter.get('/appointment-slots', requireAuth, (req, res, next) => {
+  try {
+    const queryTeacher = String(req.query.teacher_initial || '').trim();
+    const own = requireTeacherInitial(req);
+
+    if (req.session.role === 'student' && !queryTeacher) {
+      const slots = all(
+        `SELECT * FROM appointment_slots WHERE is_active = 1
+         ORDER BY teacher_initial, start_time`,
+      );
+      return res.json({ teacher_initial: null, slots: slots.map(slotOut), windows: [] });
+    }
+
+    if (req.session.role === 'super_admin' && !queryTeacher) {
+      return res.json({
+        teacher_initial: null,
+        slots: all('SELECT * FROM appointment_slots ORDER BY teacher_initial, start_time').map(slotOut),
+        windows: [],
+      });
+    }
+
+    const initial = queryTeacher || own;
+    if (!initial) return res.status(400).json({ error: 'teacher_initial is required' });
+    if (!getTeacher(initial)) return res.status(400).json({ error: 'unknown teacher_initial' });
+
+    const slots = teacherSlots(initial, { activeOnly: req.session.role === 'student' });
+    const windows = upcomingWindows(
+      slots.filter((s) => s.is_active),
+      { daysAhead: 21 },
+    );
+    res.json({ teacher_initial: initial, slots: slots.map(slotOut), windows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+miscRouter.post('/appointment-slots', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res, next) => {
+  try {
+    const own = requireTeacherInitial(req);
+    const teacherInitial =
+      req.session.role === 'super_admin' ? String(req.body?.teacher_initial || own || '').trim() : own;
+    if (!teacherInitial) return res.status(400).json({ error: 'No teacher profile on this account' });
+    if (!getTeacher(teacherInitial)) return res.status(400).json({ error: 'unknown teacher_initial' });
+
+    const { day, start_time, end_time, location, note, is_active } = slotBody(req.body);
+    const invalid = validateSlotTimes(day, start_time, end_time);
+    if (invalid) return res.status(400).json({ error: invalid });
+
+    const existing = teacherSlots(teacherInitial, { activeOnly: false });
+    const exact = existing.find(
+      (s) =>
+        s.day === day &&
+        normalizeClock(s.start_time) === start_time &&
+        normalizeClock(s.end_time) === end_time,
+    );
+    if (exact) {
+      run(
+        `UPDATE appointment_slots
+         SET location = ?, note = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [bind(location), bind(note), is_active, exact.id],
+      );
+      return res.json(slotOut(get('SELECT * FROM appointment_slots WHERE id = ?', [exact.id])));
+    }
+
+    const clash = existing.find((s) => {
+      if (s.day !== day) return false;
+      const a1 = timeToMinutes(s.start_time);
+      const a2 = timeToMinutes(s.end_time);
+      const b1 = timeToMinutes(start_time);
+      const b2 = timeToMinutes(end_time);
+      return a1 < b2 && b1 < a2;
+    });
+    if (clash) {
+      return res.status(409).json({
+        error: `Overlaps an existing slot on ${day} (${normalizeClock(clash.start_time)}–${normalizeClock(clash.end_time)})`,
+      });
+    }
+
+    const id = randomUUID();
+    try {
+      run(
+        `INSERT INTO appointment_slots (id, teacher_initial, day, start_time, end_time, location, note, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, bind(teacherInitial), bind(day), bind(start_time), bind(end_time), bind(location), bind(note), is_active],
+      );
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/UNIQUE|unique/i.test(msg)) {
+        const row = get(
+          `SELECT * FROM appointment_slots
+           WHERE teacher_initial = ? AND day = ? AND start_time = ? AND end_time = ?`,
+          [bind(teacherInitial), bind(day), bind(start_time), bind(end_time)],
+        );
+        if (row) return res.json(slotOut(row));
+      }
+      throw err;
+    }
+    res.status(201).json(slotOut(get('SELECT * FROM appointment_slots WHERE id = ?', [id])));
+  } catch (err) {
+    next(err);
+  }
+});
+
+miscRouter.patch('/appointment-slots/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res) => {
+  const existing = get('SELECT * FROM appointment_slots WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: 'Slot not found' });
+  const own = requireTeacherInitial(req);
+  if (req.session.role !== 'super_admin' && existing.teacher_initial !== own) {
+    return res.status(403).json({ error: 'Not your appointment slot' });
+  }
+
+  const next = {
+    day: req.body?.day != null ? String(req.body.day).trim() : existing.day,
+    start_time: req.body?.start_time != null ? normalizeClock(req.body.start_time) : normalizeClock(existing.start_time),
+    end_time: req.body?.end_time != null ? normalizeClock(req.body.end_time) : normalizeClock(existing.end_time),
+    location: req.body?.location != null ? String(req.body.location).trim() : existing.location || '',
+    note: req.body?.note != null ? String(req.body.note).trim() : existing.note || '',
+    is_active:
+      req.body?.is_active === false || req.body?.is_active === 0
+        ? 0
+        : req.body?.is_active === true || req.body?.is_active === 1
+          ? 1
+          : existing.is_active,
+  };
+  const invalid = validateSlotTimes(next.day, next.start_time, next.end_time);
+  if (invalid) return res.status(400).json({ error: invalid });
+
+  run(
+    `UPDATE appointment_slots
+     SET day = ?, start_time = ?, end_time = ?, location = ?, note = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      bind(next.day),
+      bind(next.start_time),
+      bind(next.end_time),
+      bind(next.location),
+      bind(next.note),
+      next.is_active,
+      req.params.id,
+    ],
+  );
+  res.json(slotOut(get('SELECT * FROM appointment_slots WHERE id = ?', [req.params.id])));
+});
+
+miscRouter.delete('/appointment-slots/:id', requireRole('teacher', 'teacher_admin', 'super_admin'), (req, res) => {
+  const existing = get('SELECT * FROM appointment_slots WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: 'Slot not found' });
+  const own = requireTeacherInitial(req);
+  if (req.session.role !== 'super_admin' && existing.teacher_initial !== own) {
+    return res.status(403).json({ error: 'Not your appointment slot' });
+  }
+  run('DELETE FROM appointment_slots WHERE id = ?', [req.params.id]);
   res.json({ ok: true });
 });
 
@@ -182,35 +376,67 @@ miscRouter.get('/appointments', requireAuth, (req, res) => {
 });
 
 miscRouter.post('/appointments', requireRole('student'), (req, res) => {
-  const { teacher_initial: teacherInitial, date, time, purpose } = req.body || {};
+  const { teacher_initial: teacherInitial, date, time, purpose, slot_id: slotId } = req.body || {};
   if (!teacherInitial || !date || !time) {
     return res.status(400).json({ error: 'teacher_initial, date and time are required' });
   }
   if (!String(purpose || '').trim()) {
     return res.status(400).json({ error: 'purpose / reason is required' });
   }
-  if (!get('SELECT initial FROM teachers WHERE initial = ?', [teacherInitial])) {
+  const teacher = getTeacher(teacherInitial);
+  if (!teacher) {
     return res.status(400).json({ error: 'unknown teacher_initial' });
   }
+
+  const clock = normalizeClock(time);
+  const isoDate = String(date).slice(0, 10);
+  if (!weekdayFromDate(isoDate) || !clock) {
+    return res.status(400).json({ error: 'Valid date and time are required' });
+  }
+
+  const published = teacherSlots(teacher.initial, { activeOnly: true });
+  if (!published.length) {
+    return res.status(400).json({
+      error: 'This teacher has not published an appointment schedule yet. Ask them to add slots in the teacher portal.',
+    });
+  }
+
+  let slot = slotId
+    ? published.find((s) => s.id === slotId)
+    : matchingSlot(teacher.initial, isoDate, clock);
+  if (slotId && !slot) {
+    return res.status(400).json({ error: 'That appointment slot is not available' });
+  }
+  if (!slot || !slotCovers(slot, isoDate, clock)) {
+    return res.status(400).json({
+      error: 'Pick a time inside this teacher’s published appointment schedule',
+    });
+  }
+
+  if (existingBooking(teacher.initial, isoDate, clock)) {
+    return res.status(409).json({ error: 'That slot is already requested or booked' });
+  }
+
   const id = randomUUID();
   run(
-    `INSERT INTO appointments (id, teacher_initial, student_id, student_name, date, time, purpose, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+    `INSERT INTO appointments (id, teacher_initial, student_id, student_name, date, time, purpose, status, slot_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
     [
       id,
-      bind(teacherInitial),
+      bind(teacher.initial),
       bind(req.session.studentId),
       bind(req.session.name),
-      bind(date),
-      bind(time),
+      bind(isoDate),
+      bind(clock),
       bind(String(purpose).trim()),
+      bind(slot.id),
     ],
   );
   notifyAppointmentRequest({
-    teacherInitial,
+    teacherInitial: teacher.initial,
     studentName: req.session.name,
-    date,
-    time,
+    date: isoDate,
+    time: clock,
     purpose: String(purpose).trim(),
     appointmentId: id,
   });
@@ -223,7 +449,9 @@ miscRouter.patch('/appointments/:id', requireRole('teacher', 'teacher_admin', 's
   if (req.session.role !== 'super_admin' && req.session.teacherInitial !== existing.teacher_initial) {
     return res.status(403).json({ error: 'Not your appointment' });
   }
-  const { status = existing.status, teacher_remarks: remarks = existing.teacher_remarks } = req.body || {};
+  const rawStatus = req.body?.status ?? existing.status;
+  const status = rawStatus === 'declined' ? 'rejected' : rawStatus;
+  const remarks = req.body?.teacher_remarks ?? existing.teacher_remarks;
   if (!['pending', 'accepted', 'rejected'].includes(status)) {
     return res.status(400).json({ error: 'invalid status' });
   }

@@ -25,6 +25,7 @@ const emptyForm = {
   teacher_initial: '',
   course_code: '',
   type: 'Lecture' as ClassType,
+  section: '',
   group_name: '',
   room_id: '',
   mode: 'Onsite' as ClassMode,
@@ -87,6 +88,7 @@ export function AdminTimetablePage() {
         e.type,
         e.mode,
         e.group_name,
+        e.section,
         e.day,
       ]
         .filter(Boolean)
@@ -243,7 +245,8 @@ export function AdminTimetablePage() {
     return conflictsWith(
       {
         ...form,
-        group_name: form.group_name || null,
+        section: form.section || form.group_name || null,
+        group_name: form.section || form.group_name || null,
         room_id: form.room_id || null,
         is_cancelled: false,
         cancellation_reason: null,
@@ -256,7 +259,8 @@ export function AdminTimetablePage() {
     await addTimetableEntry(
       {
         ...form,
-        group_name: form.group_name || null,
+        section: form.section || form.group_name || null,
+        group_name: form.section || form.group_name || null,
         room_id: form.room_id || null,
         is_cancelled: false,
         cancellation_reason: null,
@@ -522,9 +526,16 @@ export function AdminTimetablePage() {
           </select>
           <input
             className="input"
-            placeholder="Group (optional)"
-            value={form.group_name}
-            onChange={(e) => setForm({ ...form, group_name: e.target.value })}
+            placeholder="Section (A–G)"
+            value={form.section || form.group_name}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                section: e.target.value.toUpperCase(),
+                group_name: e.target.value.toUpperCase(),
+              })
+            }
+            maxLength={2}
           />
           <button className="btn-primary">Save Entry</button>
 

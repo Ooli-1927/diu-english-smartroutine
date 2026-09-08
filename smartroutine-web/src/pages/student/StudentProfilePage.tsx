@@ -41,7 +41,13 @@ export function StudentProfilePage() {
 
   const stats = useMemo(() => {
     const mine = (store?.timetable || []).filter(
-      (e) => e.batch_id === session?.batchId && !e.is_cancelled,
+      (e) => {
+        if (e.batch_id !== session?.batchId || e.is_cancelled) return false;
+        const sec = session?.section;
+        if (!sec) return true;
+        const entrySec = e.section || e.group_name;
+        return !entrySec || entrySec === sec;
+      },
     );
     const today = mine.filter((e) => e.day === todayDay()).length;
     return {
@@ -134,7 +140,10 @@ export function StudentProfilePage() {
           </div>
           <div className="profile-prefs__item">
             <span className="muted">Push alerts</span>
-            <PushNotificationToggle />
+            <div className="row-gap">
+              <PushNotificationToggle />
+              <span className="muted small">Tap the bell to turn on</span>
+            </div>
           </div>
           <div className="profile-prefs__links">
             <Link to="/student/notifications" className="btn-outline profile-prefs__notices">
@@ -188,7 +197,10 @@ export function StudentProfilePage() {
           </div>
           <div className="info-row">
             <span className="muted">Batch</span>
-            <strong>{batch?.name || session?.batchId || '—'}</strong>
+            <strong>
+              {batch?.name || session?.batchId || '—'}
+              {session?.section ? ` · Sec ${session.section}` : ''}
+            </strong>
           </div>
           <div className="info-row">
             <span className="muted">Session</span>

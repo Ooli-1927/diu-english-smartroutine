@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { CalendarDays, Clock, MessageSquare, User } from 'lucide-react';
 import type { Appointment } from '../lib/types';
+import { appointmentStatusLabel } from '../lib/types';
 
 interface Props {
   appointment: Appointment;
@@ -21,7 +22,9 @@ export function AppointmentCard({ appointment, audience, actions }: Props) {
           <User size={16} />
           <strong>{who}</strong>
         </div>
-        <span className={`status-chip ${appointment.status}`}>{appointment.status}</span>
+        <span className={`status-chip ${appointment.status}`}>
+          {appointmentStatusLabel(appointment.status)}
+        </span>
       </div>
       <div className="row-gap muted wrap">
         <span className="row-gap">

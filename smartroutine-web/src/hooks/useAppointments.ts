@@ -3,6 +3,14 @@ import { api } from '../lib/api';
 import { useData } from '../context/DataContext';
 import type { Appointment, AppointmentStatus } from '../lib/types';
 
+export const APPOINTMENTS_CHANGED = 'diu-english:appointments-changed';
+
+function emitAppointmentsChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(APPOINTMENTS_CHANGED));
+  }
+}
+
 export function useAppointments() {
   const { mode } = useData();
   const supported = mode === 'api';
@@ -29,10 +37,30 @@ export function useAppointments() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (!supported) return undefined;
+    const onChange = () => {
+      void refresh();
+    };
+    window.addEventListener(APPOINTMENTS_CHANGED, onChange);
+    const timer = window.setInterval(onChange, 15000);
+    return () => {
+      window.removeEventListener(APPOINTMENTS_CHANGED, onChange);
+      window.clearInterval(timer);
+    };
+  }, [supported, refresh]);
+
   const request = useCallback(
-    async (body: { teacher_initial: string; date: string; time: string; purpose?: string }) => {
+    async (body: {
+      teacher_initial: string;
+      date: string;
+      time: string;
+      purpose?: string;
+      slot_id?: string;
+    }) => {
       const created = await api.requestAppointment(body);
       setItems((prev) => [created, ...prev]);
+      emitAppointmentsChanged();
       return created;
     },
     [],
@@ -45,10 +73,13 @@ export function useAppointments() {
         teacher_remarks: remarks,
       });
       setItems((prev) => prev.map((a) => (a.id === id ? updated : a)));
+      emitAppointmentsChanged();
       return updated;
     },
     [],
   );
 
-  return { items, loading, error, supported, refresh, request, respond };
+  const pendingCount = items.filter((a) => a.status === 'pending').length;
+
+  return { items, pendingCount, loading, error, supported, refresh, request, respond };
 }

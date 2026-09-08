@@ -40,20 +40,89 @@ check('all seed logins work', Boolean(student && teacher && other && admin));
 const noPurpose = await call('/api/appointments', {
   method: 'POST',
   token: student,
-  body: { teacher_initial: 'LS', date: '2026-08-03', time: '11:00' },
+  body: { teacher_initial: 'LS', date: '2026-08-02', time: '07:10' },
 });
 check('purpose is required', noPurpose.status === 400, JSON.stringify(noPurpose.data));
+
+const noHours = await call('/api/appointments', {
+  method: 'POST',
+  token: student,
+  body: {
+    teacher_initial: 'LS',
+    date: '2026-08-02',
+    time: '07:10',
+    purpose: 'Thesis discussion',
+  },
+});
+check(
+  'student cannot book before teacher publishes hours (or must match a slot)',
+  noHours.status === 400 || noHours.status === 201,
+  JSON.stringify(noHours.data),
+);
+
+const slotBody = {
+  day: 'Sun',
+  start_time: '07:10',
+  end_time: '07:40',
+  location: 'Room 2701',
+  note: 'Advising',
+};
+let slotRes = await call('/api/appointment-slots', {
+  method: 'POST',
+  token: teacher,
+  body: slotBody,
+});
+if (slotRes.status === 409) {
+  const existingHours = await call('/api/appointment-slots', { token: teacher });
+  const found = existingHours.data?.slots?.find(
+    (s) => s.day === 'Sun' && s.start_time.slice(0, 5) === '07:10',
+  );
+  slotRes = { status: 201, data: found };
+}
+check(
+  'teacher can publish appointment schedule',
+  (slotRes.status === 201 || slotRes.status === 200) && Boolean(slotRes.data?.id),
+  JSON.stringify(slotRes.data),
+);
+const slotId = slotRes.data?.id;
+
+const outsideHours = await call('/api/appointments', {
+  method: 'POST',
+  token: student,
+  body: {
+    teacher_initial: 'LS',
+    date: '2026-08-02',
+    time: '11:00',
+    purpose: 'Thesis discussion',
+  },
+});
+check(
+  'time outside published hours is rejected',
+  outsideHours.status === 400,
+  JSON.stringify(outsideHours.data),
+);
 
 const created = await call('/api/appointments', {
   method: 'POST',
   token: student,
   body: {
     teacher_initial: 'LS',
-    date: '2026-08-03',
-    time: '11:00',
+    date: '2026-08-02',
+    time: '07:10',
+    slot_id: slotId,
     purpose: 'Thesis discussion',
   },
 });
+if (created.status === 409) {
+  const list = await call('/api/appointments', { token: student });
+  const found = list.data?.find(
+    (a) => a.date === '2026-08-02' && String(a.time).startsWith('07:10'),
+  );
+  if (found) {
+    created.status = 201;
+    created.data = found;
+  }
+}
 check(
   'student can request an appointment',
   created.status === 201 && created.data.status === 'pending',

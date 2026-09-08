@@ -31,6 +31,7 @@ function wipe() {
   const tables = [
     'notifications',
     'appointments',
+    'appointment_slots',
     'timetable_entries',
     'students',
     'admins',
@@ -176,13 +177,14 @@ export function seed({ force = false, quiet = false } = {}) {
       for (const s of seededStudents) {
         const password = STUDENT_INITIAL_PASSWORD;
         run(
-          `INSERT INTO students (id, student_id, name, batch_id, email, phone, password_hash, has_changed_password)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+          `INSERT INTO students (id, student_id, name, batch_id, section, email, phone, password_hash, has_changed_password)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
           [
             bind(s.id || randomUUID()),
             bind(s.student_id),
             bind(s.name),
             bind(s.batch_id),
+            bind(s.section || null),
             bind(s.email),
             bind(s.phone),
             hash(password),
@@ -243,8 +245,8 @@ export function seed({ force = false, quiet = false } = {}) {
       }
       run(
         `INSERT INTO timetable_entries
-          (id, day, batch_id, teacher_initial, course_code, type, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, day, batch_id, teacher_initial, course_code, type, section, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           randomUUID(),
           bind(e.day),
@@ -252,7 +254,8 @@ export function seed({ force = false, quiet = false } = {}) {
           bind(e.teacher_initial),
           bind(e.course_code),
           bind(e.type || 'Lecture'),
-          bind(e.group ?? e.group_name),
+          bind(e.section ?? e.group ?? e.group_name),
+          bind(e.group ?? e.group_name ?? e.section),
           roomId,
           bind(e.mode || 'Onsite'),
           bind(String(e.start ?? e.start_time).slice(0, 5)),

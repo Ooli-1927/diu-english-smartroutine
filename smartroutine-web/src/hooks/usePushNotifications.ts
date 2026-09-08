@@ -26,7 +26,7 @@ export function usePushNotifications() {
   const { session } = useAuth();
   const { mode } = useData();
   const [support, setSupport] = useState<PushSupport>(() => detectPushSupport());
-  const [serverConfigured, setServerConfigured] = useState(false);
+  const [serverConfigured, setServerConfigured] = useState<boolean | null>(null);
   const [subscribed, setSubscribed] = useState(() => isPushSubscribedLocally());
   const [permission, setPermission] = useState<NotificationPermission>(() =>
     typeof Notification !== 'undefined' ? Notification.permission : 'default',
@@ -53,6 +53,7 @@ export function usePushNotifications() {
       return;
     }
     let cancelled = false;
+    setServerConfigured(null);
     void (async () => {
       try {
         const status = await api.pushStatus();
@@ -100,7 +101,7 @@ export function usePushNotifications() {
 
   let ui: PushUiState = 'off';
   if (mode !== 'api' || !session) ui = 'offline';
-  else if (busy) ui = 'busy';
+  else if (busy || serverConfigured === null) ui = 'busy';
   else if (support === 'unsupported') ui = 'unsupported';
   else if (support === 'insecure') ui = 'insecure';
   else if (!serverConfigured) ui = 'server-off';

@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS students (
   student_id TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   batch_id TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+  section TEXT,
   email TEXT,
   phone TEXT,
   profile_pic TEXT,
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS timetable_entries (
   teacher_initial TEXT NOT NULL REFERENCES teachers(initial) ON DELETE CASCADE,
   course_code TEXT NOT NULL REFERENCES courses(code) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK (type IN ('Lecture', 'Tutorial', 'Sessional', 'Online')),
+  section TEXT,
   group_name TEXT,
   room_id TEXT REFERENCES rooms(id) ON DELETE SET NULL,
   mode TEXT NOT NULL CHECK (mode IN ('Onsite', 'Online', 'Offline')),
@@ -143,7 +145,21 @@ CREATE TABLE IF NOT EXISTS appointments (
   purpose TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
   teacher_remarks TEXT,
+  slot_id TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS appointment_slots (
+  id TEXT PRIMARY KEY,
+  teacher_initial TEXT NOT NULL REFERENCES teachers(initial) ON DELETE CASCADE,
+  day TEXT NOT NULL CHECK (day IN ('Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri')),
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  location TEXT,
+  note TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS app_metadata (
@@ -263,6 +279,8 @@ CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(use
 CREATE INDEX IF NOT EXISTS idx_google_calendar_events_user ON google_calendar_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_attendance_token ON attendance_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_appointment_slots_teacher ON appointment_slots(teacher_initial);
+CREATE INDEX IF NOT EXISTS idx_appointments_teacher_date ON appointments(teacher_initial, date, time);
 `;
 
 export function initSchema() {
@@ -273,6 +291,11 @@ export function initSchema() {
     'ALTER TABLE rooms ADD COLUMN capacity INTEGER',
     'ALTER TABLE rooms ADD COLUMN building TEXT',
     'ALTER TABLE rooms ADD COLUMN floor TEXT',
+    'ALTER TABLE appointments ADD COLUMN slot_id TEXT',
+    'ALTER TABLE students ADD COLUMN section TEXT',
+    'ALTER TABLE timetable_entries ADD COLUMN section TEXT',
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_appointment_slots_unique
+     ON appointment_slots(teacher_initial, day, start_time, end_time)`,
   ]) {
     try {
       db.exec(sql);

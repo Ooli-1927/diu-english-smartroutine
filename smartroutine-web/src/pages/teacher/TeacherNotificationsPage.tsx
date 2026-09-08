@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCheck } from 'lucide-react';
 import { NotificationList } from '../../components/NotificationList';
 import { PushNotificationBanner } from '../../components/PushNotificationBanner';
 import { BrandMark } from '../../components/BrandMark';
+import { PortalAlerts } from '../../components/PortalAlerts';
 import { useNotifications } from '../../hooks/useNotifications';
 
 export function TeacherNotificationsPage() {
@@ -18,11 +19,14 @@ export function TeacherNotificationsPage() {
             </Link>
             <BrandMark variant="compact" title="Notifications" subtitle="DIU · Department of English" />
           </div>
-          {unread > 0 && (
-            <button className="hero-icon-btn" title="Mark all read" onClick={() => void markAllRead()}>
-              <CheckCheck size={18} />
-            </button>
-          )}
+          <div className="row-gap">
+            <PortalAlerts noticesTo="/teacher/notifications" />
+            {unread > 0 && (
+              <button className="hero-icon-btn" title="Mark all read" onClick={() => void markAllRead()}>
+                <CheckCheck size={18} />
+              </button>
+            )}
+          </div>
         </div>
       </header>
       <div className="page-content pad-top">

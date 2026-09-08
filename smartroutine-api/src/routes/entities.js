@@ -203,13 +203,14 @@ entitiesRouter.post('/students', adminOnly, (req, res) => {
       : STUDENT_INITIAL_PASSWORD;
   const id = req.body.id || randomUUID();
   run(
-    `INSERT INTO students (id, student_id, name, batch_id, email, phone, profile_pic, password_hash, has_changed_password)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    `INSERT INTO students (id, student_id, name, batch_id, section, email, phone, profile_pic, password_hash, has_changed_password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [
       id,
       bind(studentId),
       bind(name),
       bind(batchId),
+      bind(req.body.section ? String(req.body.section).trim().toUpperCase() : null),
       bind(req.body.email),
       bind(req.body.phone),
       bind(req.body.profile_pic),
@@ -243,12 +244,19 @@ entitiesRouter.put('/students/:id', requireAuth, (req, res) => {
   }
 
   run(
-    `UPDATE students SET student_id = ?, name = ?, batch_id = ?, email = ?, phone = ?, profile_pic = ?, updated_at = CURRENT_TIMESTAMP
+    `UPDATE students SET student_id = ?, name = ?, batch_id = ?, section = ?, email = ?, phone = ?, profile_pic = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [
       bind(body.student_id ?? existing.student_id),
       bind(body.name ?? existing.name),
       bind(body.batch_id ?? existing.batch_id),
+      bind(
+        body.section !== undefined
+          ? body.section
+            ? String(body.section).trim().toUpperCase()
+            : null
+          : existing.section,
+      ),
       bind(body.email ?? existing.email),
       bind(body.phone ?? existing.phone),
       bind(body.profile_pic !== undefined ? body.profile_pic : existing.profile_pic),

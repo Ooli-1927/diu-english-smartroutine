@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { PageHero } from '../../components/PageHero';
+import { PortalAlerts } from '../../components/PortalAlerts';
 import { ProfileAvatar } from '../../components/ProfileAvatar';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { PushNotificationToggle } from '../../components/PushNotificationToggle';
@@ -105,6 +106,7 @@ export function TeacherProfilePage() {
         variant="page"
         kicker="Faculty account"
         title="My Profile"
+        trailing={<PortalAlerts noticesTo="/teacher/notifications" tone="on-light" />}
         actions={
           <div className="row-gap">
             <Link to="/teacher" className="icon-btn" title="Back to teaching desk">

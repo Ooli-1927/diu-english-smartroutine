@@ -22,7 +22,15 @@ function insertNotification({ type, title, body, recipientType, recipientId, ent
   return id;
 }
 
-function studentEmailsForBatch(batchId) {
+function studentEmailsForBatch(batchId, section = null) {
+  if (section) {
+    return all(
+      `SELECT email, name, student_id FROM students
+       WHERE batch_id = ? AND upper(COALESCE(section, '')) = upper(?)
+         AND email IS NOT NULL AND trim(email) != ''`,
+      [batchId, section],
+    );
+  }
   return all(
     `SELECT email, name, student_id FROM students
      WHERE batch_id = ? AND email IS NOT NULL AND trim(email) != ''`,
@@ -104,8 +112,15 @@ export function classContext(entry) {
     { label: 'Class type', value: entry.type || '—' },
     { label: 'Mode', value: entry.mode || '—' },
   ];
-  if (batch) details.push({ label: 'Batch', value: `${batch.name} (${batch.session})` });
-  if (entry.group_name) details.push({ label: 'Group', value: entry.group_name });
+  if (batch) {
+    details.push({
+      label: 'Batch',
+      value: `${batch.name} (${batch.session})${entry.section || entry.group_name ? ` · Section ${entry.section || entry.group_name}` : ''}`,
+    });
+  }
+  if (entry.section || entry.group_name) {
+    details.push({ label: 'Section', value: entry.section || entry.group_name });
+  }
   if (entry.cancellation_reason) {
     details.push({ label: 'Reason', value: String(entry.cancellation_reason) });
   }
@@ -163,7 +178,10 @@ export function notify({
   const intro = emailBody || body;
 
   if (recipientType === 'student') {
-    const batchStudents = studentEmailsForBatch(recipientId);
+    const [batchPart, sectionPart] = String(recipientId || '').includes(':')
+      ? String(recipientId).split(':')
+      : [recipientId, null];
+    const batchStudents = studentEmailsForBatch(batchPart, sectionPart || null);
     if (batchStudents.length) {
       queueMails(
         batchStudents.map((s) => ({
@@ -213,7 +231,7 @@ export function notify({
   }
 }
 
-/** Class change: every student in the batch + owning teacher. */
+/** Class change: students in that batch section + owning teacher. */
 export function announce(entry, type, title, body) {
   const ctx = classContext(entry);
   const noticeBody = `${body}${detailsPlainText(ctx.details)}`;
@@ -227,6 +245,9 @@ export function announce(entry, type, title, body) {
     .filter(Boolean)
     .join(' · ');
 
+  const section = entry.section || entry.group_name || null;
+  const studentRecipient = section ? `${entry.batch_id}:${section}` : entry.batch_id;
+
   notify({
     type,
     title,
@@ -235,7 +256,7 @@ export function announce(entry, type, title, body) {
     emailBody: body,
     details: ctx.details,
     recipientType: 'student',
-    recipientId: entry.batch_id,
+    recipientId: studentRecipient,
     entryId: entry.id,
   });
   notify({
@@ -289,7 +310,7 @@ export function notifyAppointmentDecision({
     status === 'accepted'
       ? 'Appointment accepted'
       : status === 'rejected'
-        ? 'Appointment rejected'
+        ? 'Appointment declined'
         : 'Appointment updated';
   const bodyParts = [
     `${teacherLabel} marked your request for ${date} ${time} as ${status}`,

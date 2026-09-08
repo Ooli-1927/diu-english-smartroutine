@@ -257,12 +257,14 @@ async function ensureRoutineCalendar(calendar, userId, link) {
 
 function entriesForUser(link) {
   if (link.user_role === 'student') {
-    const student = get('SELECT batch_id FROM students WHERE id = ?', [link.user_id]);
+    const student = get('SELECT batch_id, section FROM students WHERE id = ?', [link.user_id]);
     if (!student?.batch_id) return [];
-    return all(
+    const rows = all(
       `SELECT * FROM timetable_entries WHERE batch_id = ? ORDER BY day, start_time`,
       [student.batch_id],
     );
+    if (!student.section) return rows;
+    return rows.filter((e) => !e.section || e.section === student.section || e.group_name === student.section);
   }
 
   const teacher =

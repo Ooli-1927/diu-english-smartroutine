@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { UserAvatar } from '../../components/ProfileAvatar';
 import { BrandMark } from '../../components/BrandMark';
 import { CampusAtmosphere } from '../../components/CampusAtmosphere';
+import { PortalAlerts } from '../../components/PortalAlerts';
 
 const tabs = [
   { to: '/student', end: true, label: 'Schedule', icon: School },
@@ -40,6 +41,9 @@ export function StudentLayout() {
             <div className="student-topbar__mid" aria-hidden>
               <strong>Sapere Aude</strong>
               <span>Dare to be wise</span>
+            </div>
+            <div className="student-topbar__alerts">
+              <PortalAlerts noticesTo="/student/notifications" />
             </div>
             <div className="student-topbar__photo">
               <UserAvatar

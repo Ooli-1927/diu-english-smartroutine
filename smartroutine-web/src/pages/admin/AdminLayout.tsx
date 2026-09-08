@@ -22,6 +22,7 @@ import { useData } from '../../context/DataContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import { findConflicts } from '../../lib/conflicts';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { PortalAlerts } from '../../components/PortalAlerts';
 import { UserAvatar } from '../../components/ProfileAvatar';
 import { BrandMark } from '../../components/BrandMark';
 import { CampusAtmosphere } from '../../components/CampusAtmosphere';
@@ -98,7 +99,10 @@ export function AdminLayout() {
             className="sm ring brand-avatar"
           />
         </div>
-        <ThemeToggle />
+        <div className="admin-sidebar__tools">
+          <ThemeToggle />
+          <PortalAlerts noticesTo="/admin/notices" />
+        </div>
         <nav aria-label="Admin navigation">
           {navGroups.map((group) => (
             <div key={group.label} className="nav-group">

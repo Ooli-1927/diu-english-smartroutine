@@ -1,11 +1,15 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { CalendarCheck, LogOut, School, User } from 'lucide-react';
+import { Bell, CalendarCheck, LogOut, School, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useAppointments } from '../../hooks/useAppointments';
+import { useNotifications } from '../../hooks/useNotifications';
 import { CampusAtmosphere } from '../../components/CampusAtmosphere';
 
 export function TeacherLayout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const { pendingCount } = useAppointments();
+  const { unread } = useNotifications();
 
   return (
     <>
@@ -33,8 +37,28 @@ export function TeacherLayout() {
           >
             <span className="nav-ico">
               <CalendarCheck size={18} />
+              {pendingCount > 0 ? (
+                <span className="bell-badge" aria-label={`${pendingCount} pending appointment requests`}>
+                  {pendingCount > 9 ? '9+' : pendingCount}
+                </span>
+              ) : null}
             </span>
             <span>Meetings</span>
+          </NavLink>
+
+          <NavLink
+            to="/teacher/notifications"
+            className={({ isActive }) => `teacher-footer__item${isActive ? ' active' : ''}`}
+          >
+            <span className="nav-ico">
+              <Bell size={18} />
+              {unread > 0 ? (
+                <span className="bell-badge" aria-label={`${unread} unread notifications`}>
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              ) : null}
+            </span>
+            <span>Notices</span>
           </NavLink>
 
           <NavLink

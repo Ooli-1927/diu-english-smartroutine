@@ -51,6 +51,7 @@ export interface Student {
   student_id: string;
   name: string;
   batch_id: string;
+  section: string | null;
   email: string | null;
   phone: string | null;
   profile_pic: string | null;
@@ -65,6 +66,7 @@ export interface TimetableEntry {
   teacher_initial: string;
   course_code: string;
   type: ClassType;
+  section: string | null;
   group_name: string | null;
   room_id: string | null;
   mode: ClassMode;
@@ -133,6 +135,30 @@ export interface AppNotification {
 
 export type AppointmentStatus = 'pending' | 'accepted' | 'rejected';
 
+export interface AppointmentSlot {
+  id: string;
+  teacher_initial: string;
+  day: DayCode;
+  start_time: string;
+  end_time: string;
+  location: string;
+  note: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AppointmentWindow {
+  slot_id: string;
+  teacher_initial: string;
+  date: string;
+  day: DayCode;
+  start_time: string;
+  end_time: string;
+  location: string;
+  note: string;
+}
+
 export interface Appointment {
   id: string;
   teacher_initial: string;
@@ -143,7 +169,14 @@ export interface Appointment {
   purpose: string | null;
   status: AppointmentStatus;
   teacher_remarks: string | null;
+  slot_id?: string | null;
   created_at: string;
+}
+
+export function appointmentStatusLabel(status: AppointmentStatus | string): string {
+  if (status === 'rejected' || status === 'declined') return 'Declined';
+  if (status === 'accepted') return 'Accepted';
+  return 'Pending';
 }
 
 export interface AuthSession {
@@ -155,6 +188,7 @@ export interface AuthSession {
   teacherInitial?: string | null;
   studentId?: string;
   batchId?: string | null;
+  section?: string | null;
   profilePic?: string | null;
 }
 

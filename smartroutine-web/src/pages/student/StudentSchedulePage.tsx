@@ -14,13 +14,19 @@ export function StudentSchedulePage() {
   const [day, setDay] = useState<DayCode>(todayDay());
 
   const batchId = session?.batchId || '';
+  const section = session?.section || null;
   const batch = batchById(batchId);
   const today = todayDay();
 
   const weekEntries = useMemo(() => {
     if (!store || !batchId) return [];
-    return store.timetable.filter((e) => e.batch_id === batchId);
-  }, [store, batchId]);
+    return store.timetable.filter((e) => {
+      if (e.batch_id !== batchId) return false;
+      if (!section) return true;
+      const entrySection = e.section || e.group_name;
+      return !entrySection || entrySection === section;
+    });
+  }, [store, batchId, section]);
 
   const entries = useMemo(() => {
     return weekEntries
@@ -38,6 +44,7 @@ export function StudentSchedulePage() {
         subtitle={
           <>
             {batch?.name || batchId || 'Your batch'}
+            {section ? ` · Section ${section}` : ''}
             {batch?.session ? ` · ${batch.session}` : ''}
             {day === today ? ` · Today` : ''}
           </>

@@ -1731,6 +1731,7 @@ button.chip.active {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
+  align-items: start;
 }
 
 @media (min-width: 860px) {
@@ -1743,6 +1744,9 @@ button.chip.active {
   padding: 16px;
   display: grid;
   gap: 12px;
+  align-content: start;
+  align-items: start;
+  height: auto;
   border: 1px solid color-mix(in srgb, var(--diu-blue) 22%, var(--divider));
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--diu-sky) 18%, transparent), transparent 42%),
@@ -1808,12 +1812,18 @@ button.chip.active {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  align-content: center;
 }
 
 .teacher-card__actions .btn-primary.sm,
 .teacher-card__actions .btn-outline.sm {
   display: inline-flex;
   align-items: center;
+  align-self: center;
+  flex: 0 0 auto;
+  height: auto;
+  width: auto;
   text-decoration: none;
 }
 
@@ -2623,6 +2633,109 @@ textarea.input {
 .status-chip.rejected {
   background: rgba(255, 59, 48, 0.12);
   color: var(--error);
+}
+
+.office-hours-panel {
+  margin-bottom: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.office-hours-publish {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.office-hours-publish .stack-label,
+.office-hours-publish .input,
+.office-hours-publish__btn {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.office-hours-publish__btn {
+  display: flex !important;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.office-hours-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.office-hours-form__wide {
+  grid-column: 1 / -1;
+}
+
+.office-hours-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.office-hours-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #d7e4df);
+  border-radius: 10px;
+}
+
+.office-hours-item.is-paused {
+  opacity: 0.62;
+}
+
+.office-week-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.office-slot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.office-slot-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line, #d7e4df);
+  background: var(--surface, #fff);
+  cursor: pointer;
+}
+
+.office-slot-btn.is-selected {
+  border-color: #0b3d91;
+  box-shadow: 0 0 0 2px rgba(11, 61, 145, 0.18);
+}
+
+@media (min-width: 720px) {
+  .office-hours-form {
+    grid-template-columns: 0.8fr 1fr 1fr 1.4fr;
+  }
+  .office-hours-form__wide {
+    grid-column: auto;
+  }
 }
 
 .day-pills {
@@ -6549,6 +6662,25 @@ select.input:focus {
   }
 }
 
+.student-topbar__alerts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.portal-alerts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.portal-alerts .hero-icon-btn,
+.student-topbar__alerts .hero-icon-btn {
+  position: relative;
+}
+
 .student-topbar__photo {
   flex-shrink: 0;
   display: grid;
@@ -6861,6 +6993,11 @@ select.input:focus {
 .teacher-footer__item.bell .bell-badge {
   top: -4px;
   right: -6px;
+}
+
+.teacher-footer__item .nav-ico .bell-badge {
+  top: -6px;
+  right: -8px;
 }
 
 .app-shell.teacher-shell > :not(.teacher-hero):not(.bottom-nav):not(.teacher-body) {
@@ -7430,6 +7567,41 @@ select.input:focus {
   justify-content: space-between;
   gap: 18px;
   flex-wrap: wrap;
+}
+
+.teacher-hero__alerts {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 4px;
+  flex-shrink: 0;
+}
+
+.teacher-hero.compact .row-between {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-sidebar__tools {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-sidebar__tools .portal-alerts {
+  justify-content: flex-end;
+}
+
+.admin-sidebar .hero-icon-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: none;
+}
+
+.admin-sidebar .hero-icon-btn:hover,
+.admin-sidebar .hero-icon-btn.push-on {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
 
 .teacher-hero__main {

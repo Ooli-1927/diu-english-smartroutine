@@ -209,6 +209,7 @@ function normalizeFromJson(raw: RawJson): StoreState {
     student_id: s.student_id || `STU${i + 1}`,
     name: s.name || 'Student',
     batch_id: s.batch_id || batches[0]?.id || '',
+    section: (s as { section?: string | null }).section ?? null,
     email: s.email ?? null,
     phone: s.phone ?? null,
     profile_pic: (s as Student).profile_pic ?? null,
@@ -223,6 +224,7 @@ function normalizeFromJson(raw: RawJson): StoreState {
         student_id: `21020${bi}${n}`,
         name: `Demo Student ${b.name} #${n}`,
         batch_id: b.id,
+        section: 'A',
         email: `student${bi}${n}@diu.demo`,
         phone: null,
         profile_pic: null,
@@ -233,23 +235,30 @@ function normalizeFromJson(raw: RawJson): StoreState {
   }
 
   const roomByName = new Map(rooms.map((r) => [r.name, r.id]));
-  const timetable: TimetableEntry[] = raw.timetable.map((e, i) => ({
-    id: uid(`tt${i}`),
-    day: e.day,
-    batch_id: e.batch_id,
-    teacher_initial: e.teacher_initial,
-    course_code: e.course_code,
-    type: e.type,
-    group_name: e.group ?? null,
-    room_id: e.room_id
-      ? roomByName.get(e.room_id) || e.room_id
-      : null,
-    mode: e.mode,
-    start_time: e.start,
-    end_time: e.end,
-    is_cancelled: e.is_cancelled ?? false,
-    cancellation_reason: e.cancellation_reason ?? null,
-  }));
+  const timetable: TimetableEntry[] = raw.timetable.map((e, i) => {
+    const section =
+      (e as { section?: string | null }).section ??
+      (e as { group?: string | null }).group ??
+      null;
+    return {
+      id: uid(`tt${i}`),
+      day: e.day,
+      batch_id: e.batch_id,
+      teacher_initial: e.teacher_initial,
+      course_code: e.course_code,
+      type: e.type,
+      section,
+      group_name: section,
+      room_id: e.room_id
+        ? roomByName.get(e.room_id) || e.room_id
+        : null,
+      mode: e.mode,
+      start_time: e.start,
+      end_time: e.end,
+      is_cancelled: e.is_cancelled ?? false,
+      cancellation_reason: e.cancellation_reason ?? null,
+    };
+  });
 
   const admins: Admin[] = (raw.admins || []).map((a) => {
     const username = normalizeAdminUsername(a.username);

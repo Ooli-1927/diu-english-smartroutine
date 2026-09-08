@@ -20,10 +20,16 @@ export type ConflictCandidate = Omit<TimetableEntry, 'id'> & { id?: string };
 const overlaps = (a: ConflictCandidate, b: ConflictCandidate) =>
   a.day === b.day && a.start_time < b.end_time && a.end_time > b.start_time;
 
-/** Parallel lab groups of one batch are intentional, so only same/unsplit groups clash. */
+function sectionOf(e: ConflictCandidate) {
+  return e.section || e.group_name || null;
+}
+
+/** Different sections of the same batch may run in parallel. */
 function sameAudience(a: ConflictCandidate, b: ConflictCandidate) {
   if (a.batch_id !== b.batch_id) return false;
-  if (a.group_name && b.group_name) return a.group_name === b.group_name;
+  const sa = sectionOf(a);
+  const sb = sectionOf(b);
+  if (sa && sb) return sa === sb;
   return true;
 }
 
@@ -34,14 +40,17 @@ function pairKind(a: ConflictCandidate, b: ConflictCandidate): ConflictKind | nu
   return null;
 }
 
-const describe = (e: ConflictCandidate) =>
-  `${e.batch_id} ${e.course_code}${e.group_name ? ` (${e.group_name})` : ''}`;
+const describe = (e: ConflictCandidate) => {
+  const sec = sectionOf(e);
+  return `${e.batch_id}${sec || ''} ${e.course_code}`.trim();
+};
 
 function reason(kind: ConflictKind, a: ConflictCandidate, b: ConflictCandidate) {
   if (kind === 'room') return `Room ${a.room_id} is booked twice: ${describe(a)} and ${describe(b)}`;
   if (kind === 'teacher')
     return `${a.teacher_initial} is in two classes at once: ${describe(a)} and ${describe(b)}`;
-  return `${a.batch_id} has two classes at once: ${a.course_code} and ${b.course_code}`;
+  const sec = sectionOf(a);
+  return `${a.batch_id}${sec || ''} has two classes at once: ${a.course_code} and ${b.course_code}`;
 }
 
 const resourceOf = (kind: ConflictKind, e: ConflictCandidate) =>

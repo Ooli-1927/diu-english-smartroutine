@@ -1,7 +1,9 @@
 import type {
   AppNotification,
   Appointment,
+  AppointmentSlot,
   AppointmentStatus,
+  AppointmentWindow,
   AuthSession,
   Batch,
   Course,
@@ -57,19 +59,41 @@ function emitAuthRequired() {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const TRANSIENT_HTTP = new Set([408, 429, 502, 503, 504]);
+
 async function request<T>(
   path: string,
   { method = 'GET', body }: { method?: string; body?: unknown } = {},
+  attempt = 0,
 ): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(12000),
+    });
+  } catch {
+    if (path !== '/auth/login' && attempt < 6) {
+      await sleep(350 * 2 ** Math.min(attempt, 4));
+      return request<T>(path, { method, body }, attempt + 1);
+    }
+    throw new ApiError('Live server is restarting — wait a moment and try again', 503);
+  }
+
+  if (TRANSIENT_HTTP.has(res.status) && path !== '/auth/login' && attempt < 6) {
+    await sleep(350 * 2 ** Math.min(attempt, 4));
+    return request<T>(path, { method, body }, attempt + 1);
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -81,8 +105,6 @@ async function request<T>(
       clearToken();
       emitAuthRequired();
     }
-    // Prefer server message (e.g. invalid credentials). Only fall back to
-    // "session expired" for authenticated routes that rejected a token.
     const message =
       payload?.error ||
       (res.status === 401 && !isLoginAttempt
@@ -104,18 +126,23 @@ export interface BootstrapPayload {
   timetable: TimetableEntry[];
 }
 
-/** Short timeout so the UI falls back to offline mode instead of hanging. */
+/** Retry briefly so a restarting API is not treated as offline/demo mode. */
 export async function isApiReachable(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE}/health`, {
-      signal: AbortSignal.timeout(2500),
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { status?: string };
-    return data.status === 'ok';
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const res = await fetch(`${BASE}/health`, {
+        signal: AbortSignal.timeout(900),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { status?: string };
+        if (data.status === 'ok') return true;
+      }
+    } catch {
+      /* API still booting or proxy blip */
+    }
+    if (attempt < 7) await sleep(300);
   }
+  return false;
 }
 
 export const api = {
@@ -274,11 +301,42 @@ export const api = {
     date: string;
     time: string;
     purpose?: string;
+    slot_id?: string;
   }) => request<Appointment>('/appointments', { method: 'POST', body }),
   respondToAppointment: (
     id: string,
-    body: { status: AppointmentStatus; teacher_remarks?: string },
+    body: { status: AppointmentStatus | 'declined'; teacher_remarks?: string },
   ) => request<Appointment>(`/appointments/${id}`, { method: 'PATCH', body }),
+  appointmentSlots: (teacherInitial?: string) => {
+    const q = teacherInitial ? `?teacher_initial=${encodeURIComponent(teacherInitial)}` : '';
+    return request<{
+      teacher_initial: string | null;
+      slots: AppointmentSlot[];
+      windows: AppointmentWindow[];
+    }>(`/appointment-slots${q}`);
+  },
+  createAppointmentSlot: (body: {
+    day: DayCode;
+    start_time: string;
+    end_time: string;
+    location?: string;
+    note?: string;
+    is_active?: boolean;
+    teacher_initial?: string;
+  }) => request<AppointmentSlot>('/appointment-slots', { method: 'POST', body }),
+  updateAppointmentSlot: (
+    id: string,
+    body: Partial<{
+      day: DayCode;
+      start_time: string;
+      end_time: string;
+      location: string;
+      note: string;
+      is_active: boolean;
+    }>,
+  ) => request<AppointmentSlot>(`/appointment-slots/${id}`, { method: 'PATCH', body }),
+  deleteAppointmentSlot: (id: string) =>
+    request<{ ok: true }>(`/appointment-slots/${id}`, { method: 'DELETE' }),
 
   mailStatus: () =>
     request<{

@@ -53,7 +53,8 @@ function fromPdfRow(e: RoutinePdfRow | Record<string, unknown>): ImportDraft {
     start_time: normalizeTime(String(r.start_time || r.start || '')),
     end_time: normalizeTime(String(r.end_time || r.end || '')),
     room_id: (r.room_id as string) || (r.room_name as string) || (r.room as string) || null,
-    group_name: (r.group_name as string) || (r.group as string) || null,
+    group_name: (r.group_name as string) || (r.group as string) || (r.section as string) || null,
+    section: (r.section as string) || (r.group_name as string) || (r.group as string) || null,
     is_cancelled: Boolean(r.is_cancelled),
     cancellation_reason: (r.cancellation_reason as string) || null,
   };
@@ -123,6 +124,7 @@ function parseTableText(text: string): ImportDraft[] {
         end_time: normalizeTime(m[8]),
         room_id: /online/i.test(roomToken) ? null : roomToken,
         group_name: groupMatch?.[1] || null,
+        section: groupMatch?.[1] || null,
         is_cancelled: /cancelled/i.test(trimmed),
         cancellation_reason: null,
       });
@@ -145,6 +147,7 @@ function parseTableText(text: string): ImportDraft[] {
         end_time: normalizeTime(loose[5]),
         room_id: loose[6] || null,
         group_name: trimmed.match(/\b(G\d+)\b/i)?.[1] || null,
+        section: trimmed.match(/\b(G\d+)\b/i)?.[1] || null,
         is_cancelled: false,
         cancellation_reason: null,
       });
@@ -194,6 +197,7 @@ function parseCsvText(text: string): ImportDraft[] {
       end_time: normalizeTime(endTime),
       room_id: room_id || null,
       group_name: group || null,
+      section: group || null,
       is_cancelled: is_cancelled === 'true',
       cancellation_reason: cancellation_reason || null,
     });
@@ -353,7 +357,8 @@ export function resolveRoutineImport(
       teacher_initial,
       course_code,
       room_id,
-      group_name: raw.group_name || null,
+      section: raw.section || raw.group_name || null,
+      group_name: raw.section || raw.group_name || null,
       type: asType(raw.type),
       mode: asMode(raw.mode),
     });

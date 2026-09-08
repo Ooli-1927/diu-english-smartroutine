@@ -20,6 +20,7 @@ export function studentOut(row) {
     student_id: row.student_id,
     name: row.name,
     batch_id: row.batch_id,
+    section: row.section || null,
     email: row.email,
     phone: row.phone,
     profile_pic: row.profile_pic || null,
@@ -29,6 +30,7 @@ export function studentOut(row) {
 
 export function entryOut(row) {
   if (!row) return null;
+  const section = row.section || null;
   return {
     id: row.id,
     day: row.day,
@@ -36,7 +38,8 @@ export function entryOut(row) {
     teacher_initial: row.teacher_initial,
     course_code: row.course_code,
     type: row.type,
-    group_name: row.group_name,
+    section,
+    group_name: row.group_name || section,
     room_id: row.room_id,
     mode: row.mode,
     start_time: String(row.start_time).slice(0, 5),

@@ -16,14 +16,27 @@ import { UserAvatar } from '../../components/ProfileAvatar';
 import { useData } from '../../context/DataContext';
 import { ScheduleCard } from '../../components/ScheduleCard';
 import { SearchBox } from '../../components/SearchBox';
-import { todayDay } from '../../lib/constants';
+import { formatTime, todayDay } from '../../lib/constants';
 import type { Teacher } from '../../lib/types';
+import { useOfficeHours } from '../../hooks/useOfficeHours';
 
 export function TeacherLookupPage() {
   const { store } = useData();
+  const { slots: allSlots } = useOfficeHours();
   const [query, setQuery] = useState('');
   const [openInitial, setOpenInitial] = useState<string | null>(null);
   const day = todayDay();
+
+  const hoursByTeacher = useMemo(() => {
+    const map = new Map<string, typeof allSlots>();
+    for (const s of allSlots) {
+      if (!s.is_active) continue;
+      const list = map.get(s.teacher_initial) || [];
+      list.push(s);
+      map.set(s.teacher_initial, list);
+    }
+    return map;
+  }, [allSlots]);
 
   const teachers = useMemo(() => {
     const list = [...(store?.teachers || [])].sort((a, b) =>
@@ -121,6 +134,7 @@ export function TeacherLookupPage() {
           const open = openInitial === t.initial;
           const todayCount = classesToday.get(t.initial) || 0;
           const entries = open ? scheduleFor(t) : [];
+          const office = hoursByTeacher.get(t.initial) || [];
 
           return (
             <article key={t.id} className="card teacher-card">
@@ -152,6 +166,16 @@ export function TeacherLookupPage() {
                 <span className={`chip ${todayCount ? 'chip-online' : ''}`}>
                   {todayCount} class{todayCount === 1 ? '' : 'es'} today
                 </span>
+                {office.length ? (
+                  <span className="chip chip-online">
+                    Appointment schedule:{' '}
+                    {office
+                      .map((s) => `${s.day} ${formatTime(s.start_time)}–${formatTime(s.end_time)}`)
+                      .join(' · ')}
+                  </span>
+                ) : (
+                  <span className="chip">No appointment schedule</span>
+                )}
               </div>
 
               <div className="teacher-card__actions">

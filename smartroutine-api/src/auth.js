@@ -90,6 +90,7 @@ export function authenticateCredentials(usernameOrEmail, password) {
       email: student.email,
       studentId: student.student_id,
       batchId: student.batch_id,
+      section: student.section || null,
     };
   }
 

@@ -50,13 +50,18 @@ export function ScheduleCard({
         {showBatch && (
           <span className="chip">
             <Users size={14} /> {batch?.name || entry.batch_id}
+            {entry.section || entry.group_name
+              ? ` · Sec ${entry.section || entry.group_name}`
+              : ''}
           </span>
         )}
         <span className={`chip ${online ? 'chip-online' : ''}`}>
           {online ? <Wifi size={14} /> : <MapPin size={14} />}
           {online ? 'Online' : room?.name || entry.room_id || 'TBA'}
         </span>
-        {entry.group_name && <span className="chip">{entry.group_name}</span>}
+        {(entry.section || entry.group_name) && !showBatch && (
+          <span className="chip">Sec {entry.section || entry.group_name}</span>
+        )}
       </div>
       {warning && !entry.is_cancelled && (
         <div className="clash-banner">

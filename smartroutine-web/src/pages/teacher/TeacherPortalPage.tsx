@@ -11,6 +11,7 @@ import { ScheduleCard } from '../../components/ScheduleCard';
 import { UserAvatar } from '../../components/ProfileAvatar';
 import { CalendarExportButton } from '../../components/CalendarExportButton';
 import { BrandMark } from '../../components/BrandMark';
+import { PortalAlerts } from '../../components/PortalAlerts';
 import { CLASS_MODES, CLASS_TYPES, DAYS, formatTime, todayDay } from '../../lib/constants';
 import { conflictMessages } from '../../lib/conflicts';
 import { listFreeRooms, listRescheduleOptions, type Suggestion } from '../../lib/resolve';
@@ -203,6 +204,9 @@ export function TeacherPortalPage() {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="teacher-hero__alerts">
+            <PortalAlerts noticesTo="/teacher/notifications" />
           </div>
           <div className="teacher-hero__photo">
             <UserAvatar

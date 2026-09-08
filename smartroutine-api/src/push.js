@@ -35,6 +35,13 @@ function userIdsForRecipient(recipientType, recipientId) {
   if (!recipientId) return [];
 
   if (recipientType === 'student') {
+    if (String(recipientId).includes(':')) {
+      const [batchId, section] = String(recipientId).split(':');
+      return all(
+        `SELECT id FROM students WHERE batch_id = ? AND upper(COALESCE(section, '')) = upper(?)`,
+        [batchId, section],
+      ).map((r) => r.id);
+    }
     const batch = get('SELECT id FROM batches WHERE id = ?', [recipientId]);
     if (batch) {
       return all('SELECT id FROM students WHERE batch_id = ?', [recipientId]).map((r) => r.id);

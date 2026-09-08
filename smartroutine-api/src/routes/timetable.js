@@ -205,10 +205,11 @@ timetableRouter.post('/timetable/generate', adminOnly, (req, res) => {
       );
     }
     for (const e of result.scheduled) {
+      const section = e.section || e.group_name || null;
       run(
         `INSERT INTO timetable_entries
-          (id, day, batch_id, teacher_initial, course_code, type, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+          (id, day, batch_id, teacher_initial, course_code, type, section, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
         [
           randomUUID(),
           bind(e.day),
@@ -216,7 +217,8 @@ timetableRouter.post('/timetable/generate', adminOnly, (req, res) => {
           bind(e.teacher_initial),
           bind(e.course_code),
           bind(e.type),
-          bind(e.group_name),
+          bind(section),
+          bind(e.group_name || section),
           bind(e.room_id),
           bind(e.mode),
           bind(e.start_time),
@@ -249,10 +251,16 @@ timetableRouter.post('/timetable', adminOnly, (req, res) => {
   }
 
   const id = payload.id || randomUUID();
+  const section =
+    payload.section != null && String(payload.section).trim()
+      ? String(payload.section).trim().toUpperCase()
+      : payload.group_name
+        ? String(payload.group_name).trim().toUpperCase()
+        : null;
   run(
     `INSERT INTO timetable_entries
-      (id, day, batch_id, teacher_initial, course_code, type, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, day, batch_id, teacher_initial, course_code, type, section, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       bind(payload.day),
@@ -260,7 +268,8 @@ timetableRouter.post('/timetable', adminOnly, (req, res) => {
       bind(payload.teacher_initial),
       bind(payload.course_code),
       bind(payload.type),
-      bind(payload.group_name),
+      bind(section),
+      bind(payload.group_name || section),
       bind(payload.room_id),
       bind(payload.mode),
       bind(payload.start_time),
@@ -297,6 +306,7 @@ timetableRouter.patch('/timetable/:id', requireAuth, (req, res) => {
         'batch_id',
         'teacher_initial',
         'course_code',
+        'section',
         'group_name',
       ]
     : TEACHER_EDITABLE;
@@ -304,6 +314,14 @@ timetableRouter.patch('/timetable/:id', requireAuth, (req, res) => {
   const patch = {};
   for (const key of allowed) {
     if (body[key] !== undefined) patch[key] = body[key];
+  }
+  if (patch.section !== undefined) {
+    patch.section = patch.section ? String(patch.section).trim().toUpperCase() : null;
+    if (patch.group_name === undefined) patch.group_name = patch.section;
+  } else if (patch.group_name !== undefined && patch.section === undefined) {
+    const g = patch.group_name ? String(patch.group_name).trim().toUpperCase() : null;
+    patch.group_name = g;
+    patch.section = g;
   }
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
 
@@ -384,7 +402,8 @@ timetableRouter.post('/timetable/import', adminOnly, (req, res) => {
       mode: raw.mode || 'Onsite',
       start_time: String(raw.start ?? raw.start_time ?? '').slice(0, 5),
       end_time: String(raw.end ?? raw.end_time ?? '').slice(0, 5),
-      group_name: raw.group ?? raw.group_name ?? null,
+      section: raw.section ?? raw.group ?? raw.group_name ?? null,
+      group_name: raw.group ?? raw.group_name ?? raw.section ?? null,
       room_id: raw.room_id || null,
       is_cancelled: raw.is_cancelled ? 1 : 0,
       cancellation_reason: raw.cancellation_reason ?? null,
@@ -397,10 +416,11 @@ timetableRouter.post('/timetable/import', adminOnly, (req, res) => {
   transaction(() => {
     if (replace) run('DELETE FROM timetable_entries', []);
     for (const e of accepted) {
+      const section = e.section || e.group_name || null;
       run(
         `INSERT INTO timetable_entries
-          (id, day, batch_id, teacher_initial, course_code, type, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, day, batch_id, teacher_initial, course_code, type, section, group_name, room_id, mode, start_time, end_time, is_cancelled, cancellation_reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           randomUUID(),
           bind(e.day),
@@ -408,7 +428,8 @@ timetableRouter.post('/timetable/import', adminOnly, (req, res) => {
           bind(e.teacher_initial),
           bind(e.course_code),
           bind(e.type),
-          bind(e.group_name),
+          bind(section),
+          bind(e.group_name || section),
           bind(e.room_id),
           bind(e.mode),
           bind(e.start_time),

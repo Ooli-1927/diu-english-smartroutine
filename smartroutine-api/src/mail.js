@@ -111,6 +111,19 @@ function hasSmtp() {
   );
 }
 
+/** Gmail IPv6 is often unreachable on local ISPs (EHOSTUNREACH :587). Force IPv4. */
+function smtpBase() {
+  return {
+    pool: true,
+    maxConnections: CONCURRENCY,
+    family: 4,
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 30000,
+    tls: { minVersion: 'TLSv1.2' },
+  };
+}
+
 export function isMailConfigured() {
   return true;
 }
@@ -191,43 +204,41 @@ async function ensureSmtp() {
       smtpTransport = createTransport(process.env.SMTP_URL);
       transportMode = 'smtp-url';
     } else if (process.env.SMTP_HOST) {
+      const port = Number(process.env.SMTP_PORT || 465);
       smtpTransport = createTransport({
+        ...smtpBase(),
         host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: process.env.SMTP_SECURE === '1' || Number(process.env.SMTP_PORT) === 465,
+        port,
+        secure: process.env.SMTP_SECURE === '1' || port === 465,
         auth:
           process.env.SMTP_USER && process.env.SMTP_PASS
             ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
             : undefined,
-        pool: true,
-        maxConnections: CONCURRENCY,
       });
       transportMode = 'smtp';
     } else if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       smtpTransport = createTransport({
+        ...smtpBase(),
         service: process.env.SMTP_SERVICE || 'gmail',
         auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-        pool: true,
-        maxConnections: CONCURRENCY,
       });
       transportMode = process.env.SMTP_SERVICE || 'gmail';
     } else if (fileSmtp) {
       if (fileSmtp.host) {
+        const port = fileSmtp.port || 465;
         smtpTransport = createTransport({
+          ...smtpBase(),
           host: fileSmtp.host,
-          port: fileSmtp.port || 587,
-          secure: fileSmtp.port === 465,
+          port,
+          secure: port === 465,
           auth: { user: fileSmtp.user, pass: fileSmtp.pass },
-          pool: true,
-          maxConnections: CONCURRENCY,
         });
         transportMode = 'smtp-file';
       } else {
         smtpTransport = createTransport({
+          ...smtpBase(),
           service: fileSmtp.service || 'gmail',
           auth: { user: fileSmtp.user, pass: fileSmtp.pass },
-          pool: true,
-          maxConnections: CONCURRENCY,
         });
         transportMode = fileSmtp.service || 'gmail';
       }

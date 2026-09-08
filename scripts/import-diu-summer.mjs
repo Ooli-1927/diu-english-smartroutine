@@ -12,8 +12,8 @@ import mammoth from 'mammoth';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = 'a:/Downloads';
-const OUT = path.join(ROOT, 'smartroutine-api/data/seed.json');
-const PUBLIC_OUT = path.join(ROOT, 'smartroutine-web/public/data/data.json');
+const OUT = path.join(ROOT, 'backend/data/seed.json');
+const PUBLIC_OUT = path.join(ROOT, 'frontend/public/data/data.json');
 
 const DAY_MAP = {
   saturday: 'Sat',

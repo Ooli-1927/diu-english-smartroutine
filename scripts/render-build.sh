@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "==> Installing & building web"
-npm --prefix smartroutine-web install
-npm --prefix smartroutine-web run build
+echo "==> Installing & building frontend"
+npm --prefix frontend install
+npm --prefix frontend run build
 
-echo "==> Copying web dist into API public/"
-rm -rf smartroutine-api/public
-mkdir -p smartroutine-api/public
-cp -R smartroutine-web/dist/. smartroutine-api/public/
+echo "==> Copying frontend dist into backend/public/"
+rm -rf backend/public
+mkdir -p backend/public
+cp -R frontend/dist/. backend/public/
 
-echo "==> Installing API"
-npm --prefix smartroutine-api install
+echo "==> Installing backend"
+npm --prefix backend install
 
-echo "==> Build ready (API will serve smartroutine-api/public)"
+echo "==> Build ready (API will serve backend/public)"

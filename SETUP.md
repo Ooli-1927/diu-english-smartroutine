@@ -31,7 +31,7 @@ Copy those values somewhere safe (password manager, private notes). They are **n
 ## Force reseed (regenerate passwords)
 
 ```bash
-cd smartroutine-api
+cd backend
 npm run reset
 ```
 
@@ -75,7 +75,7 @@ node scripts/smoke.js
 Students and teachers may **change their password once**. After that, only the Chairman can reset it (Students / Teachers admin pages → reset). A full account list is written to gitignored `credentials.local.txt` when you run:
 
 ```bash
-cd smartroutine-api
+cd backend
 npm run reset
 ```
 
@@ -102,11 +102,11 @@ Right now, if SMTP is unset, the API uses **`mail: auto`** (MX / FormSubmit). Ne
 4. Click **Save SMTP**, then **Send test** to your own inbox.
 5. Check `/api/health` — `mail` should no longer be only `auto` (SMTP / professional path).
 
-Credentials are stored in gitignored `smartroutine-api/data/mail-smtp.json`.
+Credentials are stored in gitignored `backend/data/mail-smtp.json`.
 
 ### C) Or set SMTP in `.env`
 
-In `smartroutine-api/.env` (never commit):
+In `backend/.env` (never commit):
 
 ```env
 SMTP_USER=your.name@gmail.com
@@ -135,7 +135,7 @@ One-way sync: **SmartRoutine → Google Calendar** for students and teachers (Co
 4. **Credentials → Create OAuth client ID → Web application**:
    - Authorized JavaScript origins: `http://localhost:5173` (plus your production frontend origin later).
    - Authorized redirect URIs: `http://localhost:4000/api/google/callback` (plus your production API callback later).
-5. Copy Client ID and Client secret into `smartroutine-api/.env` (never commit):
+5. Copy Client ID and Client secret into `backend/.env` (never commit):
 
 ```env
 GOOGLE_CLIENT_ID=...

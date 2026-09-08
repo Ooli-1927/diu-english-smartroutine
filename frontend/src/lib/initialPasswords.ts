@@ -1,4 +1,4 @@
-/** Mirrors smartroutine-api/src/initialPasswords.js for offline/local mode. */
+/** Mirrors backend/src/initialPasswords.js for offline/local mode. */
 
 export const CHAIRMAN_USERNAME = 'Chairman';
 export const CHAIRMAN_PASSWORD = 'Chairman123';

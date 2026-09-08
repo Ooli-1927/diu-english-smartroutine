@@ -2,7 +2,7 @@
  * Reset demo student seed password via chairman (one-time repair after smoke).
  * Uses smoke-credentials defaults — no values printed.
  */
-import { requireSmokeCredentials } from '../smartroutine-api/scripts/smoke-credentials.js';
+import { requireSmokeCredentials } from '../backend/scripts/smoke-credentials.js';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:4000';
 const creds = requireSmokeCredentials();

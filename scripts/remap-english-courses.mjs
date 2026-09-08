@@ -1,7 +1,7 @@
 import fs from 'fs';
 
-const seedPath = 'smartroutine-api/data/seed.json';
-const publicPath = 'smartroutine-web/public/data/data.json';
+const seedPath = 'backend/data/seed.json';
+const publicPath = 'frontend/public/data/data.json';
 const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 
 const englishCatalog = [

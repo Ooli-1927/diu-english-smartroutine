@@ -276,9 +276,9 @@ const children = [
 
   h1("3. System Overview"),
   h2("3.1 Architecture"),
-  bullet("Frontend (smartroutine-web): React 19 SPA, Vite, React Router, CSS design system, PWA."),
-  bullet("Backend (smartroutine-api): Node.js 22.5+, Express 5, JWT auth, bcrypt passwords."),
-  bullet("Database: SQLite file (smartroutine-api/data/smartroutine.db) with auto-seed."),
+  bullet("Frontend (frontend): React 19 SPA, Vite, React Router, CSS design system, PWA."),
+  bullet("Backend (backend): Node.js 22.5+, Express 5, JWT auth, bcrypt passwords."),
+  bullet("Database: SQLite file (backend/data/smartroutine.db) with auto-seed."),
   bullet("Dev: API on port 4000, Vite typically on 5173 (or next free port)."),
   bullet("Production: root npm start serves API + built static web (Render-ready)."),
 
@@ -660,8 +660,8 @@ const children = [
   bullet("Web Push — Optional browser notifications."),
 
   h1("17. Deliverables Included with This System"),
-  bullet("smartroutine-web — Frontend application source."),
-  bullet("smartroutine-api — Backend API + SQLite seed."),
+  bullet("frontend — Frontend application source."),
+  bullet("backend — Backend API + SQLite seed."),
   bullet("SETUP.md — Setup and optional integrations guide."),
   bullet("UPLOAD-AND-RUN.txt — Quick upload / run notes."),
   bullet("scripts/ — Smoke, delivery E2E, seed audit, repair helpers."),

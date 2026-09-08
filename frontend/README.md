@@ -6,7 +6,7 @@ Full website conversion of the Capstone Flutter app (**DIU English Routine / Sma
 
 - **Frontend:** React + TypeScript + Vite
 - **Routing:** React Router
-- **Backend:** [`smartroutine-api`](../smartroutine-api) — Express + SQLite with JWT auth and bcrypt password hashing
+- **Backend:** [`backend`](../backend) — Express + SQLite with JWT auth and bcrypt password hashing
 - **Fallbacks:** Supabase (optional) and offline JSON demo mode
 - **PDF export:** jsPDF
 - **UI:** Poppins + design tokens from `SCREENS.md`
@@ -49,12 +49,12 @@ Or two terminals:
 
 ```bash
 # 1. backend — creates and seeds data/smartroutine.db on first run
-cd smartroutine-api
+cd backend
 npm install
 npm start                # http://127.0.0.1:4000
 
 # 2. frontend
-cd smartroutine-web
+cd frontend
 npm install
 npm run dev              # http://localhost:5173
 ```
@@ -104,8 +104,8 @@ RLS; prefer the Express API for production.
 
 ```
 CapstoneLast/
-â”œâ”€â”€ smartroutine-api/      # Express + SQLite backend (REST, JWT, seed, smoke tests)
-â”œâ”€â”€ smartroutine-web/
+â”œâ”€â”€ backend/      # Express + SQLite backend (REST, JWT, seed, smoke tests)
+â”œâ”€â”€ frontend/
 â”‚   â”œâ”€â”€ public/data/       # Seed JSON + import templates
 â”‚   â””â”€â”€ src/
 â”‚       â”œâ”€â”€ components/    # ScheduleCard, etc.
@@ -121,6 +121,6 @@ CapstoneLast/
 - Demo credentials are generated at seed time (printed to the API console) — see SETUP.md. Do not commit passwords.
 - The imported routine had 4 room clashes (rooms 2001 and 1001 were shared by two batches in
   the same period). Those four classes were moved to 2002 and 1002, so the shipped data is
-  clean; `node scripts/audit-conflicts.js` in `smartroutine-api` verifies it.
+  clean; `node scripts/audit-conflicts.js` in `backend` verifies it.
 - Teachers can only edit their own classes and profile; student and teacher lists are only
   exposed to super admins.

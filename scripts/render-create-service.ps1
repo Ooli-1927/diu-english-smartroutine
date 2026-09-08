@@ -70,7 +70,7 @@ $body = @{
     plan        = 'free'
     region      = 'singapore'
     buildCommand = 'bash ./scripts/render-build.sh'
-    startCommand = 'npm --prefix smartroutine-api start'
+    startCommand = 'npm --prefix backend start'
     healthCheckPath = '/api/health'
     numInstances = 1
   }
@@ -78,7 +78,7 @@ $body = @{
     @{ key = 'NODE_VERSION'; value = '22.14.0' },
     @{ key = 'JWT_SECRET'; value = $jwt },
     @{ key = 'CORS_ORIGIN'; value = '*' },
-    @{ key = 'WEB_DIST'; value = 'smartroutine-api/public' }
+    @{ key = 'WEB_DIST'; value = 'backend/public' }
   )
 }
 

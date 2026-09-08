@@ -13,7 +13,7 @@ import {
 } from './initialPasswords.js';
 
 const SEED_FILE = join(projectRoot, 'data', 'seed.json');
-/** Monorepo root (parent of smartroutine-api/) — local-only, gitignored. */
+/** Monorepo root (parent of backend/) — local-only, gitignored. */
 const CREDENTIALS_FILE = join(projectRoot, '..', 'credentials.local.txt');
 const HASH_ROUNDS = 10;
 

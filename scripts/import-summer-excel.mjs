@@ -9,7 +9,7 @@ import XLSX from 'xlsx';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const seedPath = join(root, 'smartroutine-api', 'data', 'seed.json');
+const seedPath = join(root, 'backend', 'data', 'seed.json');
 const excelPath = process.argv[2];
 
 if (!excelPath) {

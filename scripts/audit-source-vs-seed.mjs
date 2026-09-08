@@ -14,8 +14,8 @@ const DOWNLOADS = 'C:/Users/GIGRBYTE/Downloads';
 const FACULTY = path.join(DOWNLOADS, 'Faculty List (1).docx');
 const COURSES = path.join(DOWNLOADS, 'COURSE LIST.docx');
 const XLSX_PATH = path.join(DOWNLOADS, 'Summer 2026 ( V- 0.4) (1).xlsx');
-const SEED = path.join(ROOT, 'smartroutine-api/data/seed.json');
-const PUBLIC = path.join(ROOT, 'smartroutine-web/public/data/data.json');
+const SEED = path.join(ROOT, 'backend/data/seed.json');
+const PUBLIC = path.join(ROOT, 'frontend/public/data/data.json');
 
 // Reuse parsers by dynamic import of the import script helpers via copy of key logic
 import { createRequire } from 'module';

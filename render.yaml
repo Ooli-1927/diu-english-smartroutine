@@ -16,7 +16,7 @@ services:
     region: singapore
     rootDir: .
     buildCommand: bash ./scripts/render-build.sh
-    startCommand: npm --prefix smartroutine-api start
+    startCommand: npm --prefix backend start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
@@ -28,7 +28,7 @@ services:
       - key: CORS_ORIGIN
         sync: false
       - key: WEB_DIST
-        value: smartroutine-api/public
+        value: backend/public
       - key: NODE_ENV
         value: production
       - key: HOST

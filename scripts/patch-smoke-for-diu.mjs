@@ -3,7 +3,7 @@ import fs from 'fs';
 /** One-time DIU data patches for smoke scripts (counts / teacher initials). No passwords. */
 const patches = [
   [
-    'smartroutine-api/scripts/smoke.js',
+    'backend/scripts/smoke.js',
     [
       [/boot\.data\.teachers\.length === 17/, 'boot.data.teachers.length >= 40'],
       [/boot\.data\.timetable\.length === 76/, 'boot.data.timetable.length >= 200'],
@@ -15,13 +15,13 @@ const patches = [
     ],
   ],
   [
-    'smartroutine-api/scripts/smoke-social.js',
+    'backend/scripts/smoke-social.js',
     [
       [/teacher_initial: 'AR'/g, "teacher_initial: 'LS'"],
     ],
   ],
   [
-    'smartroutine-api/scripts/smoke-generate.js',
+    'backend/scripts/smoke-generate.js',
     [
       [/batch_ids=7th/g, 'batch_ids=66'],
       [/batch_id === '7th'/g, "batch_id === '66'"],
@@ -31,7 +31,7 @@ const patches = [
     ],
   ],
   [
-    'smartroutine-api/scripts/smoke-conflicts.js',
+    'backend/scripts/smoke-conflicts.js',
     [
       [/teacher_initial === 'AR'/g, "teacher_initial === 'LS'"],
     ],

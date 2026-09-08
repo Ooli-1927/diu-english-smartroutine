@@ -1,9 +1,9 @@
 {
-  "name": "smartroutine-api",
+  "name": "backend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "REST API + SQLite database for the SmartRoutine (DIU English Routine) web app",
+  "description": "SmartRoutine backend — Express + SQLite REST API",
   "engines": {
     "node": ">=22.5.0"
   },

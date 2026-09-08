@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { existsSync, readFileSync } from 'node:fs';
@@ -19,6 +19,8 @@ import { isGoogleCalendarConfigured } from './googleCalendar.js';
 import { googleRouter } from './routes/google.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '.env') });
+
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -52,10 +54,10 @@ function resolveWebDist() {
     process.env.WEB_DIST,
     join(__dirname, '..', 'public'),
     join(process.cwd(), 'public'),
-    join(process.cwd(), 'smartroutine-api', 'public'),
-    join(__dirname, '..', '..', 'smartroutine-web', 'dist'),
-    join(process.cwd(), 'smartroutine-web', 'dist'),
-    join(process.cwd(), '..', 'smartroutine-web', 'dist'),
+    join(process.cwd(), 'backend', 'public'),
+    join(__dirname, '..', '..', 'frontend', 'dist'),
+    join(process.cwd(), 'frontend', 'dist'),
+    join(process.cwd(), '..', 'frontend', 'dist'),
   ].filter(Boolean);
 
   for (const p of candidates) {
@@ -128,7 +130,7 @@ if (WEB_DIST) {
         '<!doctype html><meta charset="utf-8"><title>DIU SmartRoutine</title>' +
           '<body style="font-family:system-ui;padding:2rem">' +
           '<h1>API is running</h1>' +
-          '<p>Web UI build missing. Redeploy with a <strong>Web Service</strong> (not Static Site) and build the React app into <code>smartroutine-api/public</code>.</p>' +
+          '<p>Web UI build missing. Redeploy with a <strong>Web Service</strong> (not Static Site) and build the React app into <code>backend/public</code>.</p>' +
           '<p><a href="/api/health">/api/health</a></p></body>',
       );
   });
@@ -181,7 +183,7 @@ app.listen(PORT, HOST, () => {
   console.log(
     WEB_DIST
       ? `Web UI: serving ${WEB_DIST}`
-      : 'Web UI: not found (API only — run smartroutine-web build for combined deploy)',
+      : 'Web UI: not found (API only — run frontend build for combined deploy)',
   );
   const mail = mailStatus();
   console.log(

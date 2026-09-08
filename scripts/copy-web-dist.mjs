@@ -3,11 +3,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const src = join(root, 'smartroutine-web', 'dist');
-const dest = join(root, 'smartroutine-api', 'public');
+const src = join(root, 'frontend', 'dist');
+const dest = join(root, 'backend', 'public');
 
 if (!existsSync(join(src, 'index.html'))) {
-  console.error('Missing smartroutine-web/dist — run web build first');
+  console.error('Missing frontend/dist — run frontend build first');
   process.exit(1);
 }
 

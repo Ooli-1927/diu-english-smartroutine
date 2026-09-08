@@ -30,7 +30,7 @@ API + database লাগে — **GitHub Pages** বা **Render Static Site** �
 | --- | --- |
 | Root Directory | খালি (repo root) |
 | Build Command | `bash ./scripts/render-build.sh` |
-| Start Command | `npm --prefix smartroutine-api start` |
+| Start Command | `npm --prefix backend start` |
 | Health Check Path | `/api/health` |
 
 Env vars:
@@ -41,7 +41,7 @@ Env vars:
 | `JWT_SECRET` | যেকোনো লম্বা র‍্যান্ডম স্ট্রিং |
 | `CORS_ORIGIN` | Your real frontend origin (e.g. `https://YOUR.onrender.com`) — never `*` |
 | `NODE_ENV` | `production` |
-| `WEB_DIST` | `smartroutine-api/public` |
+| `WEB_DIST` | `backend/public` |
 | `HOST` | `0.0.0.0` |
 
 তারপর **Manual Deploy → Deploy latest commit**।

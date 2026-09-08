@@ -8185,8 +8185,8 @@ select.input:focus {
 .campus-atmosphere {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
@@ -8213,39 +8213,47 @@ select.input:focus {
   z-index: 30;
 }
 
-/* Chairman sidebar: fixed full-height rail (never scrolls away) */
+/* Chairman sidebar: fixed rail on desktop only (mobile uses sticky top nav) */
 .admin-shell {
-  display: block;
   min-height: 100vh;
   width: 100%;
   max-width: none;
   margin: 0;
 }
 
-.admin-shell > .admin-sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 272px;
-  height: 100vh;
-  max-height: 100vh;
-  margin: 0;
-  z-index: 40;
-  overflow-x: hidden;
-  overflow-y: auto;
-  border-radius: 0;
-  box-sizing: border-box;
-}
-
 .admin-shell > .admin-main {
-  margin-left: 272px;
-  width: auto;
   min-width: 0;
   max-width: none;
-  min-height: 100vh;
   box-sizing: border-box;
   background-color: transparent !important;
+}
+
+@media (min-width: 961px) {
+  .admin-shell {
+    display: block;
+  }
+
+  .admin-shell > .admin-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 272px;
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    z-index: 40;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 0;
+    box-sizing: border-box;
+  }
+
+  .admin-shell > .admin-main {
+    margin-left: 272px;
+    width: auto;
+    min-height: 100vh;
+  }
 }
 
 .campus-atmosphere__shade {
@@ -8494,6 +8502,383 @@ select.input:focus {
   .campus-atmosphere__quote,
   .campus-atmosphere__spark {
     animation: none !important;
+  }
+}
+
+/* ============================================================
+   Cross-portal mobile layout (student / teacher / chairman)
+   ============================================================ */
+
+html,
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+@media (max-width: 960px) {
+  .admin-shell {
+    display: flex !important;
+    flex-direction: column;
+    grid-template-columns: none !important;
+  }
+
+  .admin-shell > .admin-sidebar {
+    position: sticky !important;
+    top: 0;
+    left: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    z-index: 40;
+    overflow-x: auto;
+    overflow-y: visible;
+    border-radius: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .admin-shell > .admin-main {
+    margin-left: 0 !important;
+    width: 100% !important;
+    min-height: 0;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .admin-sidebar .brand-mark,
+  .admin-sidebar .sidebar-brand {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .admin-sidebar nav {
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .admin-sidebar nav .nav-group {
+    display: contents;
+  }
+
+  .admin-sidebar nav .nav-group__label {
+    display: none;
+  }
+
+  .admin-sidebar a {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 8px 12px;
+    border-radius: 999px;
+  }
+
+  .admin-sidebar a:hover,
+  .admin-sidebar a.active {
+    transform: none;
+  }
+
+  .sidebar-footer {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sidebar-logout {
+    margin-top: 0 !important;
+    margin-left: auto;
+  }
+
+  .page,
+  .admin-page,
+  .app-body > .page,
+  .app-body > .admin-page {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-hero,
+  .page-hero--sticky,
+  .page-hero--sticky.is-compact,
+  .page-hero--sticky.is-docked {
+    flex-wrap: wrap !important;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .page-hero__main,
+  .page-hero__aside {
+    width: 100%;
+    margin-left: 0 !important;
+    min-width: 0;
+  }
+
+  .page-actions,
+  .page-hero--sticky.is-compact .page-actions,
+  .admin-page .row-between > .row-gap,
+  .admin-page .row-between > .page-actions,
+  .chairman-console .page-actions {
+    width: 100%;
+    flex-wrap: wrap !important;
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .page-actions > .btn-primary,
+  .page-actions > .btn-outline,
+  .page-actions > .file-btn,
+  .admin-page .row-between > .row-gap > .btn-primary,
+  .admin-page .row-between > .row-gap > .btn-outline,
+  .admin-page .row-between > .row-gap > .file-btn,
+  .admin-page .row-between > .page-actions > .btn-primary,
+  .admin-page .row-between > .page-actions > .btn-outline,
+  .admin-page .row-between > .page-actions > .file-btn {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+    padding: 10px 12px;
+  }
+
+  .filter-bar,
+  .chairman-console .filter-bar,
+  .tt-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .filter-bar .input,
+  .filter-bar .search-box,
+  .filter-bar .searchable-select,
+  .tt-toolbar .search-box,
+  .search-box {
+    min-width: 0 !important;
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .filter-bar > .btn-outline,
+  .filter-bar > .btn-primary,
+  .filter-bar > .row-gap {
+    width: 100%;
+  }
+
+  .row-between {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 10px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .table-wrap table {
+    min-width: 560px;
+  }
+
+  .grid-form,
+  .row-2,
+  .row-3,
+  .stat-grid,
+  .analytics-grid,
+  .schedule-card__actions .row-3,
+  .chairman-console .row-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .schedule-card__actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .schedule-card__actions .btn-primary,
+  .schedule-card__actions .btn-outline {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .chip-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip-row > .btn-primary,
+  .chip-row > .btn-outline {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .bottom-nav,
+  .student-shell .bottom-nav,
+  .teacher-shell .bottom-nav.teacher-footer {
+    width: calc(100% - 16px) !important;
+    left: 50%;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    padding: 6px;
+    gap: 2px;
+    border-radius: 18px;
+  }
+
+  .bottom-nav a {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 2px;
+    font-size: 0.58rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  .bottom-nav a .nav-ico {
+    width: 26px;
+    height: 26px;
+    border-radius: 10px;
+  }
+
+  .bottom-nav a .nav-ico svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .student-topbar,
+  .teacher-hero {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .student-topbar__row,
+  .teacher-hero__row {
+    gap: 10px;
+    align-items: center;
+  }
+
+  .student-topbar__mid {
+    display: none !important;
+  }
+
+  .user-avatar.student-hero-photo,
+  .user-avatar.hero-photo {
+    width: 52px !important;
+    height: 52px !important;
+    min-width: 52px;
+  }
+
+  .student-topbar__photo-caption {
+    display: none;
+  }
+
+  .teacher-hero__main {
+    min-width: 0 !important;
+  }
+
+  .profile-prefs__row,
+  .profile-prefs__links {
+    flex-direction: column;
+    align-items: stretch !important;
+    width: 100%;
+  }
+
+  .profile-prefs__item,
+  .profile-prefs__notices {
+    width: 100%;
+    margin-left: 0 !important;
+    min-width: 0;
+  }
+
+  .profile-banner-inner--photo-right {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-banner-inner--photo-right .profile-avatar-wrap {
+    margin-left: 0;
+  }
+
+  .profile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .profile-actions > .btn-primary,
+  .profile-actions > .btn-outline {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .office-hours-form,
+  .office-slot-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .office-hours-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .modal {
+    width: min(440px, calc(100vw - 24px));
+    max-height: min(90vh, 720px);
+    overflow: auto;
+  }
+
+  .page-actions > .btn-primary,
+  .page-actions > .btn-outline,
+  .page-actions > .file-btn {
+    flex: 1 1 100%;
+  }
+
+  .app-body,
+  .teacher-body,
+  .admin-main {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+
+  .admin-shell > .admin-main {
+    padding-bottom: 24px;
+  }
+}
+
+@media (max-width: 420px) {
+  .bottom-nav a span:not(.nav-ico):not(.nav-badge) {
+    font-size: 0.52rem;
+  }
+
+  .page-hero__copy h1,
+  .page-header h1 {
+    font-size: clamp(1.15rem, 5.5vw, 1.45rem);
+  }
+
+  .btn-primary,
+  .btn-outline,
+  .file-btn {
+    min-height: 44px;
   }
 }
 
